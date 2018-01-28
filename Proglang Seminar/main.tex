@@ -1,0 +1,256 @@
+\documentclass{llncs}
+%
+\usepackage{proof}
+
+\newcommand{\lit}[1]{\mathrm{#1}}
+
+\begin{document}
+
+\title{On Syntactic Lattice-Based Secure Information Flow Analysis and its Soundness}
+
+\author{Mohammad Ali ~ARABI\textsuperscript{0000-0001-7088-417X}}
+\institute{Albert-Ludwigs-Universit\"at Freiburg, Freiburg im Breisgau, Baden-W\"urttemberg, DE
+\email{mohammad.ali.arabi@saturn.uni-freiburg.de}
+}
+\maketitle
+%
+\begin{abstract}
+Ensuring secure information flow within programs in the context of multiple sensitivity levels has been widely studied. Especially noteworthy is Dennings' work in secure flow analysis and the lattice model. We introduce Dennings' original approach, then present the work of Volpano \textit{et. al.} that formulates Dennings' approach as a type system and present a notion of soundness for the system that can be viewed as a form of noninterference.
+\end{abstract}
+
+\section{Introduction}
+Computer system security relies in part of \textit{information flow control}, that is, guarding unauthorized information flow. This can be seen in particular as regulations to control data flow between different \textit{security classes}. As an example, a flow from a high-security variable to a low-security variable must not be permitted.
+
+Early works on enforcing flow policies concentrated on run-time mechanisms (cf. \cite{Denning76}). Dorothy and Peter Denning \cite{Denning77} introduced a syntactic method for secure information flow analysis, using a lattice model of security classes. As the work of Dennings lacked a precise discussion on the soundness of their method, Volpano \textit{et. al.} \cite{VolpanoIS96} later introduced an equivalent analysis in terms of a type system, to prove the soundness of Dennings' method.
+
+After a brief introduction to lattices, we discuss why it is convenient to use them in modeling security classes. Then we have an introduction to type systems. Provided with enough prerequisites, we state methods of Dennings and Volpano \textit{et. al.}, with a brief discussion on their equivalence. Then we discuss the soundness of the methods.
+
+\section{Prerequisites}
+
+A very first instance of security classes may be the set $\{L, H\}$, denoting low- and high-security. Then the relation point $L \leq H$ together with the ones derived from reflexivity makes it a totally ordered set, \textit{i. e.} $\leq\ = \{(L, H), (L, L), (H, H)\}$. Although, the order relation may be non-linear. 
+
+In information security, data integrity means maintaining and assuring the accuracy and completeness of data over its entire life cycle \cite{Boritz2005}. This means that data cannot be modified in an unauthorized or undetected manner. More generally, we can label variables with $T$ and $U$, standing for trusted and untrusted, respectively, meaning whether the data is retrieved from a reliable source.
+One may want to combine the classes of integrity with classes of security, resulting $\{TL, TH, UL, UH\}$. Now the two classes $TH$ and $UL$ are not necessarily comparable. So, it will be handy for our approach to support a partially ordered set of security classes.
+
+\subsection{Lattice}
+
+\begin{definition}
+Let $(L, \leq)$ be a partially ordered set (poset), and let $S \subseteq L$. Then
+\begin{itemize}
+    \item $u \in L$ is an \textbf{upper bound} of $S$ iff $s \leq u$ for all $s \in S$,
+    \item $l \in L$ is a \textbf{lower bound} of $S$ iff $l \leq s$ for all $s \in S$,\
+    \item an upper bound $u$ of $S$ is said to be its \textbf{least upper bound}, or \textbf{join}, or \textbf{supremum}, if $u \leq x$ for each upper bound $x$ of $S$,
+    \item a lower bound $l$ of $S$ is said to be its \textbf{greatest lower bound}, or \textbf{meet}, or \textbf{infimum}, if $x \leq l$ for each lower bound $x$ of $S$.
+\end{itemize}
+\end{definition}
+
+For the next definition, note that join and meet are unique, upon existence.
+
+\begin{definition}
+\label{def:lattice}
+A poset $(L, \leq)$ is called
+\begin{itemize}
+    \item \textbf{join-semilattice} if every two-element subset $\{a, b\} \in L$ has a join $a \vee b$,
+    \item \textbf{meet-semilattice} if every two-element subset $\{a, b\} \in L$ has a meet $a \wedge b$,
+    \item \textbf{lattice} if it is both join-semilattice and meet-semilattice.
+\end{itemize}
+\end{definition}
+
+The definition \ref{def:lattice} makes $\vee$ and $\wedge$ associative commutative binary operations. Note that both operations are $\leq$-monoton, \textit{i.e.} $a_1 \leq a_2$ and $b_1 \leq b_2$ implies $a_1 \vee b_1 \leq a_2 \vee b_2$ and $a_1 \wedge b_1 \leq a_2 \wedge b_2$. Also note that
+\begin{equation}
+    x_i \leq x_1 \vee \cdots \vee x_n
+\end{equation}
+and
+\begin{equation}
+    x_1 \wedge \cdots \wedge x_n \leq x_i,
+\end{equation}
+for all $i = 1, \dots, n$. Lastly, if a poset $(L, \leq)$ is not a lattice, we can extend it into a lattice, by adding all the joins and meets, recursively. It is especially possible concretely if the initial set is finite.
+
+\begin{definition}
+A \textbf{bounded lattice} is a lattice $(L, \leq)$ that has a greatest element $\top \in L$ (also called \textbf{maximum} or \textbf{top}) and a least element $\bot \in L$ (also called \textbf{minimum} or \textbf{bottom}), satisfying
+\begin{equation}
+    \bot \leq x \leq \top \mbox{, for all } x \in L.
+\end{equation}
+\end{definition}
+
+Every non-empty finite lattice is bounded, by letting $\top = \bigvee L$ and $\bot = \bigwedge L$.
+
+\begin{example}
+The set $L$ of all logical formulae generated by a set of atoms $A$ is a lattice with $\rightarrow$ being its order relation, $\vee$ being logical or, and $\wedge$ being logical and. We can also extend $L$ to a bounded lattice, by adding two atomic formulae $\top$ and $\bot$, denoting tautology and contradiction, \textit{i.e.} constants always evaluating to true and false, respectively.
+\end{example}
+
+\subsection{Type Systems}
+
+A type system is a tractable syntactic method to derive a type judgment for  various constructs of a computer program, such as variables, expressions, functions or modules \cite{Pierce2002}. Such a judgment, for ours purpose, has the form
+\[
+\gamma \vdash p : \tau,
+\]
+asserting that the program phrase $p$ has the type $\tau$, with respect to identifier typing $\gamma$, which is a map from identifiers to types, giving types to all the free identifier in $p$. Very similar to proof calculi in logic, we can express our typing system as a set of axioms and inference rules. A typing judgment is then followed from a typing system if we can derive it by using inference rules, starting from axioms.
+
+\begin{definition}
+A \textbf{typing rule} (with $n$ assumptions) is an inference rule of the form
+\[
+\infer{\gamma \vdash p : \tau}{
+    \gamma_1 \vdash p_1 : \tau_1
+    &
+    \cdots
+    &
+    \gamma_n \vdash p_n : \tau_n
+}
+\]
+taking the typing judgment $\gamma \vdash p : \tau$ to be true, when all the assumptions are. Furthermore, a \textbf{typing axiom} is a typing rule with 0 assumptions. A \textbf{type system} is then a set of typing rules.
+\end{definition}
+
+\begin{example}
+A simple example would be a type system for integer-valued expressions (it is taken from \cite{VolpanoIS96}).
+This type system has 3 rules, 2 of which are axioms:
+\[
+\gamma \vdash i : \tau,
+\]
+with $i$ denoting integer literals,
+\[
+\gamma \vdash x : \tau, \mbox{ if } \gamma(x) = \tau,
+\]
+and the non-axiom rule
+\[
+\infer[.]{\gamma \vdash e + e' : \lit{int}}{
+    \gamma \vdash e : \lit{int}
+    &
+    \gamma \vdash e' : \lit{int}
+}
+\]
+\end{example}
+
+\section{Lattice Model of Information Flow and Dennings' Certification Mechanism}
+
+The lattice model of information flow was first introduced in \cite{Denning76}, and was later used in \cite{Denning77} for the static syntactic analysis of information flow.
+
+\subsection{Policy Description and Flow}
+
+A flow policy can be represented by a finite lattice $(S, \rightarrow)$, where $S$ is a given set of security classes and $\rightarrow$ a relation specifying permissible flows between pairs of classes. Every storage object $x$ is statically assigned to a security class denoted by underbar $\underline{x}$. Hence $\underline{x} \rightarrow \underline{y}$ means that information flow from $x$ to $y$ is permissible. Every unnamed constant (\textit{i.e.} literal) has the security class $\bot$.
+
+\begin{definition}
+Information flow from object $x$ to object $y$, denoted by $x \Rightarrow y$, is the usage of information stored in $x$ to derive information transfered to $y$.
+\end{definition}
+
+A program $p$ is secure if and only if no execution of $p$ results in a flow $x \Rightarrow y$ unless $\underline{x} \rightarrow \underline{y}$. Unfortunately, this definition of security is generally undecidable, so we work instead with the alternative syntactic definition:
+
+\begin{definition}
+A program $p$ is \textbf{syntactically secure} if for all storage objects $x$ and $y$,
+\begin{equation}
+    x \Rightarrow y \mbox{ is syntactically specified by $p$ only if } \underline{x} \rightarrow \underline{y}.
+\end{equation}
+\end{definition}
+
+\subsection{Certification Mechanism}
+
+The secure information flow certificate mechanism is introduced in \cite{Denning77}. The mechanism is very similar to semantic evaluation, and is done in the compile time. The simple idea is that a flow from objects $x_i$ to objects $y_j$ is permissible iff
+\begin{equation}
+    \underline{x_1} \vee \cdots \vee \underline{x_m} \rightarrow \underline{y_1} \wedge \cdots \wedge \underline{y_n}.
+\end{equation}
+
+As an example, let $p$ be ``$y := f(x_1, \dots, x_m)$''. So, $p$ indicates information flows $x_i \Rightarrow y$. Hence, this is permissible if $\underline{x_1} \vee \cdots \vee \underline{x_m} \rightarrow \underline{y}$. Whenever such a constraint dissatisfied, we will flag the whole program as \textit{uncertified}.
+
+Another example of implicit information flow would be the if statement. So, let $p$ be 
+\[
+\mbox{\texttt{if }} x_1 > x_2 \mbox{\texttt{ then }} y_1 := w
+\mbox{\texttt{ else }} y_2 := y_2 + 1.
+\]
+Here, the flows $x_i \Rightarrow y_i$ are authorized if $\underline{x_1} \vee \underline{x_2} \rightarrow \underline{y_1} \wedge \underline{y_2}$.
+Replacing one of the statements with ``$c_1; c_2$'', we will then need the semantic rule
+\[
+\underline{c_1; c_2} := \underline{c_1} \wedge \underline{c_2}
+\]
+to infer the security classes of the branches, before we do the security check.
+
+\section{Type System for Secure Flow Analysis}
+
+Let $(S, \rightarrow)$ be a finite lattice of security classes. Let $T = \{\tau\ \lit{exp}, \tau\ \lit{var}, \tau\ \lit{com} \mid \tau \in S\}$ be the set of security types, $\tau$ exp denoting the type of an expression with security class $\tau$, $\tau$ var denoting variables, and $\tau$ com denoting commands. The order relation $\leq$ on $T$ is then defined by:
+\begin{itemize}
+    \item $\tau_1\ \lit{exp} \leq \tau_2\ \lit{exp}$ if $\tau_1 \rightarrow \tau_2$,
+    \item $\tau_1\ \lit{var} \leq \tau_2\ \lit{var}$ if $\tau_1 = \tau_2$,
+    \item $\tau_1\ \lit{com} \leq \tau_2\ \lit{com}$ if $\tau_2 \rightarrow \tau_1$.
+\end{itemize}
+In other words, exp and com can be seen as monotonic functions from $S$ to $T$, exp being increasing and com being decreasing functions. 
+
+% \begin{remark}
+% Containing 3 disjoint lattices inside, we can turn the whole $(T, \leq)$ into one lattice by adding artificial elements $\top$ and $\bot$ to it.
+% \end{remark}
+
+\subsection{The Type System}
+
+The type system is defined for a block-structured language described below. It consists of phrases denoted by $p$ that are either an expression $e$ or a command $c$:
+\begin{eqnarray}
+p &::=& e \mid c \nonumber \\
+e &::=& x \mid l \mid n \mid e + e' \mid e - e' \mid e = e' \mid e < e' \nonumber \\
+c &::=& e := e' \mid c; c' \mid \mbox{\texttt{if }} e \mbox{\texttt{ then }} c \mbox{\texttt{ else }} c' \mid \mbox{\texttt{while }} e \mbox{\texttt{ do }} c \mid \mbox{\texttt{letvar }} x := e \mbox{\texttt{ in }} c \nonumber
+\end{eqnarray}
+Here, $x$ denotes variables, $l$ locations, and $n$ integer literals.
+The typing judgments are in the form of
+\[
+\lambda; \gamma \vdash p : \rho,
+\]
+with $\lambda$ being a location typing (having the type information for locations), $\gamma$ being an identifier typing, and $\rho \in T$.
+
+The typing rules are of the form
+\[
+\infer[,]{\lambda, \gamma \vdash \mbox{\texttt{if }} e \mbox{\texttt{ then }} c \mbox{\texttt{ else }} c' : \tau\ \lit{cmd}}{
+    \lambda, \gamma \vdash e : \tau\ \lit{exp}
+    &
+    \lambda, \gamma \vdash c : \tau\ \lit{cmd}
+    &
+    \lambda, \gamma \vdash c' : \tau\ \lit{cmd}
+}
+\]
+all having the same security class in the assumptions and the conclusion (with one unimportant exception) \cite{VolpanoIS96}. The typing is then possible through the rule named the \textit{subtyping rule}, stating that
+\[
+\infer[.]{\lambda, \gamma \vdash p : \rho'}{
+    \lambda, \gamma \vdash p : \rho
+    &
+    \rho \leq \rho'
+}
+\]
+Combining the the original rules with the subtyping rule, we can derive more general typing rules, called \textit{syntax-derived typing rules}. The example would be:
+\[
+\infer[.]{\lambda, \gamma \vdash \mbox{\texttt{if }} e \mbox{\texttt{ then }} c \mbox{\texttt{ else }} c' : \tau'\ \lit{cmd}}{
+    \lambda, \gamma \vdash e : \tau\ \lit{exp}
+    &
+    \lambda, \gamma \vdash c : \tau\ \lit{cmd}
+    &
+    \lambda, \gamma \vdash c' : \tau\ \lit{cmd}
+    &
+    \tau' \rightarrow \tau
+}
+\]
+
+\subsection{Soundness}
+
+The soundness of this type system is stated as a \textit{non-interference} property, \textit{i.e.} changing the values of locations with security classes properly greater than $\tau$, won't affect the final value of a location with security class $\tau$.
+
+Having introduced semantic evaluation relations
+\[
+\mu \vdash e \Rightarrow n
+\]
+and
+\[
+\mu \vdash c \Rightarrow \mu',
+\]
+for expressions and commands, respectively, we can formulate our soundness result as the following theorem \cite{VolpanoIS96}:
+
+\begin{theorem}[Soundness]
+Suppose
+\begin{itemize}
+    \item $\lambda \vdash c : \rho$,
+    \item $\mu \vdash c \Rightarrow \mu'$,
+    \item $\nu \vdash c \Rightarrow \nu'$,
+    \item $\lit{dom}(\lambda) = \lit{dom}(\mu) = \lit{dom}(\nu)$, and
+    \item $\mu(l) = \nu(l)$ for all $l$ such that $\lambda(l) \leq \tau\ \lit{exp}$.
+\end{itemize}
+Then $\mu'(l) = \nu'(l)$ for all $l$ such that $\lambda(l) \leq \tau\ \lit{exp}$.
+\end{theorem}
+
+% The bibliography
+\bibliographystyle{splncs}
+\bibliography{references}{}
+
+\end{document}
