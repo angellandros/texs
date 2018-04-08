@@ -1,0 +1,1742 @@
+\documentclass{article}
+\usepackage[utf8]{inputenc}
+
+\input{newmacros.tex}
+\input{algorithm_labels.aux}
+
+\newtheorem{remark}{Remark}
+\newtheorem{theorem}{Theorem}
+
+\title{Reading Course: Randomized Methods for Low-Rank Approximation}
+\author{Farnaz IRANI}
+\date{March 2018}
+
+\begin{document}
+
+\maketitle
+
+\section{Introduction}
+This is a reading job on article \textit{Finding Structure with Randomness: Probabilistic Algorithms for Constructing Approximate Matrix Decompositions}, by N.~Halko, P.~G.~Martinsson, and J.~A.~Tropp.
+We will explain some important results in this article, with focus on randomized methods for approximating matrix decompositions. This work is supervised by Prof.~Dr.~Bart, University of Geneva.
+
+% from abstract
+Low-rank matrix approximations, such as the truncated singular value
+decomposition and the rank-revealing QR decomposition, play a central
+role in data analysis and scientific computing. This work surveys and
+extends
+recent research which demonstrates that \emph{randomization} offers a
+powerful tool for performing low-rank matrix approximation.
+These
+techniques exploit modern computational architectures
+more fully than classical methods and open the possibility of
+dealing with truly massive data sets.
+%In particular, these techniques
+%offer a route toward principal component analysis (PCA) for petascale
+%data.
+
+This paper presents a modular framework for constructing randomized
+algorithms that compute partial matrix decompositions. These methods
+use random sampling
+to identify a subspace that captures most of the action
+of a matrix. The input matrix is then compressed---either explicitly
+or implicitly---to this subspace, and the reduced matrix is
+manipulated deterministically to obtain the desired low-rank
+factorization. In many cases, this approach beats its classical
+competitors in terms of accuracy, speed, and robustness.
+These claims
+are supported by extensive numerical experiments and a detailed error
+analysis.
+
+The specific benefits of randomized techniques depend on the
+computational environment. Consider the model problem of finding
+the $k$ dominant components of the singular value decomposition
+of an $m \times n$ matrix.
+(i) For a dense input matrix, randomized algorithms require $\bigO(mn
+\log(k))$ floating-point operations (flops) in contrast with $
+\bigO(mnk)$ for classical algorithms.
+%
+%(ii) For a sparse input matrix, the flop count matches classical
+%Krylov subspace methods, but the randomized approach is more robust,
+%while it takes full advantage of block linear algebra subroutines and
+%parallelization.
+(ii) For a sparse input matrix, the flop count matches classical
+Krylov subspace methods, but the randomized approach is more robust
+and can easily be reorganized to exploit multi-processor architectures.
+(iii) For a matrix that is too large to fit in fast memory, the randomized
+techniques require only a constant number of passes over the data,
+as opposed to $\bigO(k)$ passes for classical algorithms.
+In fact, it is sometimes possible to perform matrix approximation with a
+\emph{single pass} over the data.
+
+%\pgnotate{After ``constant'' maybe we should squeeze in a comment that
+%this can mean as few as ``one''?}
+
+% The recent development of randomized techniques for approximating
+% numerically rank-deficient matrices is rapidly transforming
+% numerical linear algebra. To illustrate this development, the
+% present paper describes and analyzes a class of techniques for
+% solving variations of a basic model problem: Given an $m\times n$
+% matrix $\mtx{A}$ and an integer $k < \min\{m,n\}$, compute an
+% $m\times k$ matrix $\mtx{B}$ and a $k\times n$ matrix $\mtx{C}$ such
+% that $\norm{\mtx{A} - \mtx{B}\mtx{C}} \approx \min\{\norm{\mtx{A} -
+% \mtx{A}_{(k)}}\,\colon\, \mtx{A}_{(k)}\mbox{ has rank }k\}$.
+% Variations discussed include the imposition of conditions on the
+% factors; for instance, the problem of computing an approximate
+% Singular Value Decomposition, or an approximate (rank-revealing) QR
+% factorization. Randomized techniques have proven highly effective at
+% solving such approximation problems in a range of different
+% environments, for instance: (1) For a general dense matrix
+% $\mtx{A}$, accurate and stable randomized techniques require
+% $O(mn\log(k))$ operations, as opposed to the $O(mnk)$ operations
+% required by classical techniques. (2) For sparse matrices, and other
+% matrices that can rapidly be applied to vectors, randomized
+% techniques match the number of floating point operations required by
+% state-of-the-art classical techniques such as Arnoldi or Lanczos,
+% but are more robust, and allow much more flexibility in organizing
+% the computation, allowing multi-core architectures to be exploited
+% fully. (3) For very large matrices that do not fit in fast memory,
+% randomized methods allow approximate factorizations to be computed
+% out-of-core with as few as a single pass over the data.
+
+The present paper reviews and extends recently published randomized
+techniques for solving the low-rank approximation problem, provides
+a unified framework for analyzing these techniques, and
+significantly tightens existing theoretical error analyses. It
+demonstrates that in standard computational environments, randomized
+techniques often outperform classical techniques in terms of
+accuracy, speed, and robustness.
+
+\section{Low-Rank Approximation}
+
+The roster of standard matrix decompositions includes the pivoted QR
+factorization, the eigenvalue decomposition, and the singular value
+decomposition (SVD), all of which expose the (numerical) range of a
+matrix. Truncated versions of these factorizations are often used to
+express a \emph{low-rank approximation} of a given matrix:
+\begin{equation}
+\label{eq:lowrank}
+\begin{array}{ccccccccccc}
+\mtx{A} &\approx& \mtx{B} & \mtx{C},\\
+m\times n && m \times k & k\times n.
+\end{array}
+\end{equation}
+The inner dimension $k$ is sometimes called the \emph{numerical rank} of the matrix.
+When the numerical rank is much smaller than either dimension $m$ or $n$,
+a factorization such as \eqref{eq:lowrank} allows the matrix to be stored
+inexpensively and to be multiplied rapidly with vectors or other matrices.
+The factorizations can also be used for data interpretation or to
+solve computational problems, such as least squares.
+
+Matrices with low numerical rank appear in a wide variety of scientific
+applications.  We list only a few:
+
+%\notate{Steal references from other papers.  Compress this material.}
+
+\begin{itemize}
+\item   A basic method in statistics and data mining is to compute the
+directions of maximal variance in vector-valued data by performing
+\emph{principal component analysis} (PCA) on the data matrix.
+PCA is nothing other than a low-rank matrix
+approximation~\cite[\S14.5]{HTF08:Elements-Statistical}.
+%~\cite[Sec.~3.8]{DHS01:Pattern-Recognition},.
+%This technique is ubiquitous in genomics, analysis of financial data, etc.
+
+\item   Another standard technique in data analysis is to perform
+low-dimensional embedding of data under the assumption that there
+are fewer degrees of freedom than the ambient dimension would suggest.
+In many cases, the method reduces to computing a partial SVD of a matrix
+derived from the data.  See~\cite[\S\S14.8--14.9]{HTF08:Elements-Statistical}
+or \cite{coifman_PNAS_diffusionmaps}.
+%This approach has been applied to study the link structure of the
+%World Wide Web~\cite{pagerank_book} and to compress and classify large
+%collections of images~\cite{????????}.
+%This approach has been applied to study the link structure of the
+%World Wide Web~\cite{pagerank_book} and to analyze ``manifolds''
+%of images~\cite{????????}.
+
+\item The problem of estimating parameters from measured data via
+least-squares fitting often leads to very large systems of linear
+equations that are close to linearly dependent. Effective techniques
+for factoring the coefficient matrix lead to efficient techniques
+for solving the least-squares problem,
+\cite{2008_rokhlin_leastsquares}.
+
+\item   Many fast numerical algorithms for solving PDEs and for rapidly evaluating
+potential fields such as the fast multipole method~\cite{rokhlin1997}
+and $\mathcal{H}$-matrices~\cite{hackbusch2003}, rely on low-rank approximations of
+continuum operators.
+
+\item Models of multiscale physical phenomena often involve PDEs with rapidly
+oscillating coefficients. Techniques for  \emph{model reduction}
+or \emph{coarse graining} in such environments are often based %(directly or indirectly)
+on the observation that the linear transform that maps the input data to the requested output
+data %(such as an average deflection, or an average porosity)
+can be approximated by an operator of low rank~\cite{engquist_wavelethomogenization}.
+\end{itemize}
+
+\section{Randomized Methods vs Traditional Methods}
+
+\textbf{Stage A:} Compute an approximate basis for the range of the input matrix $\mtx{A}$. In other words,
+we require a matrix $\mtx{Q}$ for which
+\begin{equation} \label{eqn:Q-form}
+\text{$\mtx{Q}$ has orthonormal columns and $\mtx{A} \approx \mtx{Q}\mtx{Q}^{\adj}\mtx{A}$.}
+\end{equation}
+We would like the basis matrix $\mtx{Q}$ to contain as few columns as possible, but it is
+even more important to have an accurate approximation of the input matrix.
+
+%We would like the basis matrix $\mtx{Q}$ to contain as few columns as possible, but it is not
+%critical to obtain the absolute minimum number at this stage as long as
+%the approximation of the input matrix is accurate. \notate{tweak sentence.}
+
+\vspace{2mm}
+
+\textbf{Stage B:}
+Given a matrix $\mtx{Q}$ that satisfies~\eqref{eqn:Q-form},
+we use $\mtx{Q}$ to help compute a standard factorization (QR, SVD, etc.) of $\mtx{A}$.
+
+This goal is achieved after three simple steps:
+\begin{enumerate}
+\item   Form $\mtx{B} = \mtx{Q}^{\adj}\mtx{A}$, which yields
+the low-rank factorization $\mtx{A} \approx \mtx{Q}\mtx{B}$.
+\item   Compute an SVD of the small matrix: $\mtx{B} = \widetilde{\mtx{U}}\mtx{\Sigma}\mtx{V}^{\adj}$.
+\item   Set $\mtx{U} = \mtx{Q}\widetilde{\mtx{U}}$.
+\end{enumerate}
+
+\subsection{A general dense matrix that fits in fast memory}
+\label{sec:intro_fits in RAM}
+
+A standard deterministic technique for computing an approximate SVD is to
+perform a rank-revealing QR factorization of the matrix,
+and then to manipulate the factors to obtain the final decomposition.
+The cost of this approach is typically $\bigO(kmn)$ floating-point
+operations, or \textit{flops}, although these methods require slightly
+longer running times in rare cases~\cite{gu_rrqr}.
+
+In contrast, randomized schemes can produce an approximate SVD using
+only $\bigO(mn\log(k) + (m+n)k^2)$ flops.  The gain in asymptotic
+complexity is achieved by using a random matrix $\mtx{\Omega}$ that
+has some internal structure, which allows us to evaluate the
+product $\mtx{A\Omega}$ rapidly.  For example,
+randomizing and subsampling the discrete Fourier transform
+works well.  Sections~\ref{sec:ailonchazelle} and~\ref{sec:SRFTs}
+contain more information on this approach.
+
+\subsubsection{An accelerated technique for general dense matrices}
+\label{sec:ailonchazelle}
+
+This section describes a set of techniques that allow us to compute
+an approximate rank-$\ell$ factorization of a general dense $m \times n$
+matrix in roughly $\bigO(mn\log(\ell))$ flops, in contrast to the
+asymptotic cost $\bigO(mn\ell)$ required by earlier methods.
+We can tailor this scheme for the real or complex case, but we focus on
+the conceptually simpler complex case.
+%These algorithms were introduced in~\cite{random2},
+%which was inspired by~\cite{Sar06:Improved-Approximation}.
+These algorithms were introduced in~\cite{random2};
+similar techniques were proposed in~\cite{Sar06:Improved-Approximation}.
+%\pgnotate{I modified the last sentence to make sure we do not
+%offend Mark or Vladimir.}
+
+%This section describes a set of techniques
+%introduced in \cite{random2} that compute an approximate rank-$\ell$
+%factorization of a general dense $m\times n$ matrix $\mtx{A}$ in
+%$O(mn\log(\ell))$ operations, rather than the $O(mn\ell)$
+%operations required by previously known methods. Such techniques exist
+%for both real and complex matrices, but for simplicity we limit
+%discussion to the complex case.
+
+The first step toward this accelerated technique is to observe that
+the bottleneck in Algorithm~\ref{alg:basic} is the computation of
+the matrix product $\mtx{A\Omega}$.  When the test matrix $\mtx{\Omega}$
+is standard Gaussian, the cost of this multiplication is $\bigO(mn\ell)$,
+the same as a rank-revealing QR algorithm~\cite{gu_rrqr}.  The key
+idea is to use a \emph{structured} random matrix that allows us to
+compute the product in $\bigO(mn \log(\ell))$ flops.
+
+The \term{subsampled random Fourier transform}, or SRFT, is perhaps the
+simplest example of a structured random matrix that meets our goals.
+An SRFT is an $n \times \ell$ matrix of the form
+\begin{equation}
+\label{eq:def_srft}
+\mtx{\Omega} = \sqrt{\frac{n}{\ell}} \, \mtx{DFR},
+\end{equation}
+where
+\lsp
+\begin{itemize}
+\item   $\mtx{D}$ is an $n \times n$ diagonal matrix whose entries are
+independent random variables uniformly distributed on the complex unit circle,
+
+\item   $\mtx{F}$ is the $n \times n$ unitary discrete Fourier transform (DFT),
+whose entries take the values $f_{pq} = n^{-1/2} \, \econst^{-2\pi\iunit (p-1)(q-1)/n}$ for $p, q = 1, 2, \dots, n$, and
+
+\item   $\mtx{R}$ is an $n \times \ell$ matrix that samples $\ell$ coordinates
+from $n$ uniformly at random, i.e., its $\ell$ columns are drawn randomly
+without replacement from the columns of the $n \times n$ identity matrix.
+\end{itemize}
+\lsp
+
+%When $\mtx{\Omega}$ is defined by~\eqref{eq:def_srft}, we can compute the sample
+%matrix $\mtx{Y} = \mtx{A\Omega}$ using $\bigO(mn\log(\ell))$ flops by using a
+%subsampled FFT~\cite{random2}.
+When $\mtx{\Omega}$ is defined by~\eqref{eq:def_srft}, we can compute the sample
+matrix $\mtx{Y} = \mtx{A\Omega}$ using $\bigO(mn\log(\ell))$ flops via a
+subsampled FFT~\cite{random2}.
+%\pgnotate{Fixed an double occurrence of the word ``using''.}
+Then we form the basis $\mtx{Q}$ by orthonormalizing
+the columns of $\mtx{Y}$, as described in~\S\ref{sec:proto_revisited}.
+This scheme appears as Algorithm~\ref{alg:fastbasic}.
+The total number $T_{\rm struct}$ of flops required by this procedure is
+\begin{equation}
+\label{eq:cost_SRFT}
+T_{\rm struct} \sim mn \log(\ell) + \ell^2 n
+\end{equation}
+%This scheme is analogous with Algorithm~\ref{alg:basic}.
+%
+%In practice, it is often faster to compute a full FFT at a cost of
+%$\bigO(mn\log(\min\{m,n\}))$, which increases the asymptotic cost slightly.
+Note that if $\ell$ is substantially larger than the numerical rank $k$
+of the input matrix, we can perform the orthogonalization with $\bigO( k \ell n)$
+%\pgnotate{Changed from $\bigO(k^{2}n)$.}
+flops because the columns of the sample matrix are almost linearly dependent.
+
+The test matrix~\eqref{eq:def_srft} is just one choice among many
+possibilities.  Other suggestions that appear in the literature include
+subsampled Hadamard transforms, chains of Givens rotations acting on
+randomly chosen coordinates, and many more.  See~\cite{liberty_diss}
+and its bibliography.  Empirically, we have found that the transform
+summarized in Remark~\ref{remark:random_givens} below performs very
+well in a variety of environments~\cite{2008_rokhlin_leastsquares}.
+
+At this point, it is not well understood how to quantify and compare
+the behavior of structured random transforms.  One reason for this
+uncertainty is that it has been difficult to analyze the amount
+of oversampling that various transforms require.  Section~\ref{sec:SRFTs}
+establishes that the random matrix~\eqref{eq:def_srft} can be used to
+identify a near-optimal basis for a rank-$k$ matrix using
+$\ell \sim (k + \log(n)) \log(k)$ samples.
+%
+%In practice, the transform
+%described in Remark~\ref{remark:random_givens}
+%seems to require about $\ell = k + 10$ or $\ell = k + 20$ samples.
+%
+In practice, the transforms \eqref{eq:def_srft} and \eqref{eq:random_Givens}
+typically require no more oversampling than a Gaussian test matrix requires.
+(For a numerical example, see \S\ref{sec:num_SRFT}.)
+As a consequence, setting $\ell = k + 10$ or $\ell = k + 20$ is typically more than
+adequate. Further research on these questions would be valuable.
+
+\lsp
+
+\begin{figure}
+\begin{center}
+\fbox{
+\begin{minipage}{.9\textwidth}
+
+\begin{center}
+\textsc{Algorithm \ref{alg:fastbasic}: Fast Randomized Range Finder}
+\end{center}
+
+\lsp
+
+\textit{Given an $m\times n$ matrix $\mtx{A}$, and an integer $\ell$,
+this scheme computes an $m\times \ell$ orthonormal matrix
+$\mtx{Q}$ whose range approximates the range of $\mtx{A}$.}
+
+\lsp
+
+\begin{tabbing}
+\hspace{5mm} \= \hspace{5mm} \= \hspace{5mm} \= \hspace{5mm} \= \kill
+\anum{1} \>Draw an $n\times \ell$ SRFT test matrix $\mtx{\Omega}$, as defined by \eqref{eq:def_srft}. \\
+%\pgnotate{Added reference.}\\
+\anum{2} \>Form the $m\times \ell$ matrix $\mtx{Y} = \mtx{A}\mtx{\Omega}$ using a (subsampled) FFT.\\
+\anum{3} \>Construct an $m \times \ell$ matrix $\mtx{Q}$ whose columns form an orthonormal\\
+         \> basis for the range of $\mtx{Y}$, e.g., using the QR factorization $\mtx{Y} = \mtx{Q}\mtx{R}$.
+\end{tabbing}
+\end{minipage}}
+\end{center}
+\end{figure}
+
+
+%\pgnotate{Modified the last couple of sentences.}
+
+%
+%We first observe that when $\mtx{A}$ is given as a general array of
+%numbers, Algorithm \ref{alg:basic} incurs an $O(mn\ell)$ cost in
+%computing the sample matrix $\mtx{Y} = \mtx{A}\mtx{\Omega}$ when
+%$\mtx{\Omega}$ is a Gaussian matrix of size $n\times \ell$. The
+%basic algorithm would therefore have the same asymptotic cost as
+%standard techniques such as rank-revealing QR (see
+%e.g.~\cite{golub}). A key observation of \cite{random2} is that the
+%randomization required can be achieved by a random matrix
+%$\mtx{\Omega}$ that has enough internal structure that the
+%matrix-matrix product $\mtx{A}\mtx{\Omega}$ can be evaluated in
+%$O(mn\log(\ell))$ operations. For instance, to generate $\ell$
+%samples from the range of $\mtx{A}$, it is possible to use the
+%sample matrix
+%\begin{equation}
+%\label{eq:def_srft}
+%\mtx{\Omega} = \sqrt{n/\ell}\,\mtx{D}\mtx{F}\mtx{R}
+%\end{equation}
+%where $\mtx{D}$ is a diagonal matrix whose diagonal entries are
+%i.i.d.~random variables drawn from a uniform distribution
+%on the unit circle in the complex plane, where $\mtx{F}$
+%is the $n\times n$ matrix with entries
+%$$
+%\mtx{F}_{pq} = \frac{1}{\sqrt{n}}\,e^{-2\pi i (p-1)(q-1)/n},
+%$$
+%and where $\mtx{R}$ is an $n\times \ell$ sampling matrix obtained by
+%randomly pulling $\ell$ columns from the $n\times n$ unit matrix.
+%In other words, given an $n\times 1$ vector $\vct{x}$, the vector
+%$\hat{\vct{x}} = \vct{x}\,\mtx{F}$ is the discrete Fourier transform
+%of $\vct{x}$, and $\vct{x}\,\mtx{F}\mtx{R}$ is an $\ell \times 1$
+%vector holding $\ell$ randomly drawn entries from $\hat{\vct{x}}$.
+
+%When $\mtx{\Omega}$ is defined by (\ref{eq:def_srft}), the sample
+%matrix $\mtx{Y} = \mtx{A}\mtx{\Omega}$ can be calculated via a
+%subsampled FFT using $O(m\,n\,\log(\ell))$ floating point operations
+%\cite{random2}. Then $\mtx{Q}$ is calculated by orthonormalizing the
+%columns of $\mtx{Y}$ using standard procedures. The total cost $T$
+%of generating an approximate ON-basis for the column space with
+%$\ell$ vectors satisfies
+%\begin{equation}
+%\label{eq:cost_SRFT}
+%T \sim m\,n\,\log(\ell) + n\,\ell^{2}\bigr.
+%\end{equation}
+%The second term in (\ref{eq:cost_SRFT}) corresponds to the cost of
+%orthonormalizing the columns of $\mtx{Y}$. If $\ell$ is
+%substantially larger than the actual numerical rank $k$ of the
+%matrix, then these columns have linear dependencies and can be
+%orthonormalized at $O(n\,k^{2})$ cost.
+
+%The sampling matrix given in (\ref{eq:def_srft}) is only one choice
+%out of many possibilities. Other suggestions from the literature
+%include subsampled Hadamard transforms, chains of Given's rotations
+%acting on randomly picked indices, and many others, see
+%\cite{liberty_diss} and the references therein. It is at this point
+%not well understood which ones perform the best, or even how to
+%quantify ``best'' in different environments. We have empirically
+%found the transform of \cite{2008_rokhlin_leastsquares} to be an
+%excellent choice across a broad range of applications and describe
+%it briefly in Remark \ref{remark:random_givens}.
+
+%One reason for the uncertainty about which random transforms are
+%``best'' is that it is not well understood exactly by how much we
+%need to ``oversample'' the range of $\mtx{A}$. It is our empirical
+%experience that setting $\ell = k+10$ or $\ell = k+20$ is often
+%sufficient when using the random matrix described in Remark
+%\ref{remark:random_givens}. The random matrix in (\ref{eq:def_srft})
+%was analyzed in \cite{random2} resulting in a bound that at most
+%$\ell \sim k^{2}$ samples are required, while our Theorem
+%\ref{thm:SRFT} indicates $\ell \sim \log(k)\,\bigl(k +
+%\log(n)\bigr)$ for the same matrix.
+
+%\begin{figure}
+%\begin{center}
+%\fbox{
+%\begin{minipage}{100mm}
+%(1) Draw random numbers $\{\alpha_{j}\}_{j=1}^{n}$ from a uniform distribution on $[0,\,2\,\pi]$
+%and overwrite $\mtx{A} \leftarrow
+%\mtx{A}\,\circ\,\mbox{diag}(e^{i\,\alpha_{1}},\,e^{i\,\alpha_{2}},\,\dots,\,e^{i\,\alpha_{n}})$.
+%
+%\lsp
+%
+%(2) Generate a random matrix $\mtx{\Theta}$ of the form (\ref{eq:Theta}) by drawing a
+%permutation $\mtx{\Pi}$ and random numbers $\{\theta_{j}\}_{j=1}^{n-1}$ uniformly from
+%the interval $[0,\,2\,\pi]$. Overwrite $\mtx{A} \leftarrow \mtx{A}\,\mtx{\Theta}$.
+%
+%\lsp
+%
+%(3) Repeat steps (1) and (2) once.
+%
+%\lsp
+%
+%(4) Fix a number $\ell$ of samples (see Remark ??) and draw a random
+%subset $J$ of $\ell$ integers from the set $\{1,\,2,\,\dots,\,n\}$. Then
+%use a subsampled FFT to evaluate $\mtx{Y} = \mtx{A}\,\mtx{F}_{J}^{(n)}$.
+%
+%\lsp
+%
+%(5) Generate an $m\times k$ orthonormal matrix $\mtx{Q}$ by taking the
+%first $k$ steps of a rank-revealing QR factorization of $\mtx{Y}$.
+%
+%\end{minipage}}
+%\caption{Given an $m\times n$ complex matrix $\mtx{A}$, and a fixed rank $k$,
+%this algorithm computes an orthonormal matrix $\mtx{Q}$ whose columns form an
+%approximate basis for the column space of $\mtx{A}$.}
+%\label{fig:ailonchazelle}
+%\end{center}
+%\end{figure}
+
+\lsp
+
+\begin{remark}\rm
+\label{remark:SRFT_fixedaccuracy}
+The structured random matrices discussed in this section
+do not adapt readily to the fixed-precision problem, where
+the computational tolerance is specified, because the
+samples from the range are usually computed in bulk.
+Fortunately, these schemes are sufficiently inexpensive that
+we can progressively increase the number of samples
+computed starting with $\ell = 32$, say, and then
+proceeding to $\ell = 64, 128, 256, \dots$ until we achieve
+the desired tolerance.
+\end{remark}
+
+\lsp
+
+\begin{remark}\rm
+When using the SRFT~\eqref{eq:def_srft} for matrix approximation,
+we have a choice whether to use a subsampled FFT or a full FFT.
+The complete FFT is so inexpensive that it often pays to construct
+an extended sample matrix $\mtx{Y}_{\rm large} = \mtx{ADF}$
+and then generate the actual samples by drawing columns at random
+from $\mtx{Y}_{\rm large}$ and rescaling as needed.
+The asymptotic cost increases to $\bigO(mn\log(n))$
+flops, but the full FFT is actually faster for moderate problem
+sizes because the constant suppressed by the big-O notation is so
+small.  Adaptive rank determination is easy because we just examine
+extra samples as needed.
+\end{remark}
+%
+%Computing the full FFT is extremely inexpensive, and it sometimes
+%pays to evaluate an extended sample matrix $\mtx{Y}_{\rm large} =
+%\mtx{A}\mtx{D}\mtx{F}$, and then generate $\mtx{Y}$ by drawing
+%columns at random from $\mtx{Y}_{\rm large}$ (and rescaling as
+%appropriate). The asymptotic cost of computing
+%$\mtx{A}\mtx{D}\mtx{F}$ is $O(m\,n\,\log(n))$ rather than the
+%$O(m\,n\,\log(\ell))$ cost of evaluating
+%$\mtx{A}\mtx{D}\mtx{F}\mtx{R}$, but the constants in the estimates
+%are such that for moderate matrix sizes, the first approach is often
+%faster. This technique also makes adaptive rank determination very
+%simple since additional samples from the range can be generated by
+%simply drawing them at random from $\mtx{Y}_{\rm large}$.
+
+
+%The type of random matrices
+%described in this section do not readily adapt to the ``given
+%precision'' problem (when the computational tolerance rather than
+%the rank is given) since all the samples from the range are computed
+%in aggregate. However, the scheme is sufficiently inexpensive that
+%it is entirely feasible to start by trying say $\ell = 32$ and if
+%that is not enough, simply doubling the number of samples, $\ell =
+%64,\, 128,\, 256, \dots$ until the requested tolerance has been met.
+%It is possible to just add the new samples computed to the sample
+%vectors already at hand.
+
+\lsp
+
+\begin{remark}
+\label{remark:random_givens}\rm
+Among the structured random matrices that
+we have tried, one of the strongest candidates involves sequences
+of random Givens rotations~\cite{2008_rokhlin_leastsquares}.
+This matrix takes the form
+\begin{equation}
+\label{eq:random_Givens}
+\mtx{\Omega} = \mtx{D}''\,\mtx{\Theta}'\,\mtx{D}'\,\mtx{\Theta}\,\mtx{D}\,\mtx{F}\,\mtx{R},
+\end{equation}
+where the prime symbol $'$ indicates an independent realization
+%\pgnotate{Changed ``copy'' to ``realization''}
+of a random matrix.
+The matrices $\mtx{R}$, $\mtx{F}$, and $\mtx{D}$ are defined after~\eqref{eq:def_srft}.
+The matrix $\mtx{\Theta}$ is a chain of random Givens rotations:
+$$
+\mtx{\Theta} = \mtx{\Pi} \,\mtx{G}(1, 2; \theta_1) \,\mtx{G}(2, 3; \theta_2) \, \cdots \,
+\mtx{G}(n-1, n; \theta_{n-1})
+$$
+where $\mtx{\Pi}$ is a random $n \times n$ permutation matrix;
+where $\theta_1, \dots, \theta_{n-1}$ are independent random
+variables uniformly distributed on the interval $[0, 2\pi]$;
+and where $\mtx{G}(i, j; \theta)$ denotes a rotation on $\Cspace{n}$ by the angle $\theta$
+in the $(i, j)$ coordinate plane~\cite[\S5.1.8]{golub}.
+\end{remark}
+
+%One of the best choices of a structured random matrix we have
+%tried was suggested in \cite{2008_rokhlin_leastsquares}
+%and takes the form
+%\begin{equation}
+%\label{eq:random_Givens}
+%\mtx{\Omega} = \mtx{D}''\,\mtx{\Theta}'\,\mtx{D}'\,\mtx{\Theta}\,\mtx{D}\,\mtx{F}\,\mtx{R}.
+%\end{equation}
+%In (\ref{eq:random_Givens}), $\mtx{D}$, $\mtx{F}$, and $\mtx{R}$ are defined as in
+%(\ref{eq:def_srft}). The matrices $\mtx{D}'$ and $\mtx{D}''$ have
+%the same distribution as $\mtx{D}$ but are drawn independently.
+%The matrix $\mtx{\Theta}$ consists of a chain of random
+%Given's rotations. Specifically, $\mtx{\Theta}$ takes the form
+%\begin{multline}
+%\label{eq:Theta}
+%\mtx{\Theta} = \mtx{\Pi}\,
+%\left[\begin{array}{ccccc}
+% \cos(\theta_{1}) & \sin(\theta_{1}) &      0 & \cdots & 0 \\
+%-\sin(\theta_{1}) & \cos(\theta_{1}) &      0 & \cdots & 0 \\
+%                0 &                0 &      1 & \cdots & 0 \\
+%           \vdots &           \vdots & \vdots &        & \vdots \\
+%                0 &                0 &      0 & \cdots & 1
+%\end{array}\right]\,
+%\left[\begin{array}{ccccc}
+%     1 &                0 &                0 & \cdots & 0 \\
+%     0 & \cos(\theta_{2}) & \sin(\theta_{2}) & \cdots & 0 \\
+%     0 &-\sin(\theta_{2}) & \cos(\theta_{2}) & \cdots & 0 \\
+%\vdots &           \vdots &           \vdots &        & \vdots \\
+%     0 &                0 &                  0 & \cdots & 1
+%\end{array}\right]\\
+%\left[\begin{array}{ccccc}
+%     1 & \cdots & 0 & 0 & 0 \\
+%\vdots &        &   \vdots &           \vdots &         \vdots \\
+%     0 & \cdots & 1 & 0 & 0 \\
+%     0 & \cdots & 0 & \cos(\theta_{n-1}) & \sin(\theta_{n-1})\\
+%     0 & \cdots & 0 &-\sin(\theta_{n-1}) & \cos(\theta_{n-1})\\
+%\end{array}\right],
+%\end{multline}
+%where $\mtx{\Pi}$ is a random $n\times n$ permutation matrix, and the
+%numbers $\{\theta_{1},\,\theta_{2},\,\dots,\,\theta_{n-1}\}$ are
+%i.i.d.~random numbers from a uniform distribution on the interval
+%$[0,\,2\,\pi]$.
+%The matrix $\mtx{\Theta}'$ is an independent
+%realization of a matrix from the same distribution as $\mtx{\Theta}$.
+
+\lsp
+
+\begin{remark} \rm
+When the singular values of the input matrix $\mtx{A}$ decay slowly,
+Algorithm \ref{alg:fastbasic} may perform poorly in terms of accuracy.
+When randomized sampling is used with a Gaussian random matrix, the
+recourse is to take a couple of steps of a power iteration;
+see~Algorithm \ref{alg:subspaceiteration}. However, it is not currently
+known whether such an iterative scheme can be accelerated to $\bigO(mn\log(k))$
+complexity using ``fast'' random transforms such as the SRFT.
+\end{remark}
+
+\subsection{A matrix for which matrix--vector products can be evaluated rapidly}
+
+When the matrix $\mtx{A}$ is sparse or structured, we may be able to apply
+it rapidly to a vector.  In this case, the classical prescription for computing
+a partial SVD is to invoke a Krylov subspace method, such as the Lanczos or Arnoldi
+algorithm.  It is difficult to summarize the computational cost of these methods because
+their performance depends heavily on properties of the input matrix
+and on the amount of effort spent to stabilize the algorithm.
+(Inherently, the Lanczos and Arnoldi methods are numerically unstable.)
+For the same reasons, the error analysis of such schemes is unsatisfactory
+in many important environments.
+
+%\footnote{Modified the language here --- the old
+%version seemed to state that the error analysis of \textit{all} Krylov methods is imprecise
+%which is not really true.}
+
+At the risk of being overly simplistic, we claim that the typical
+cost of a Krylov method for approximating the $k$ leading singular vectors
+of the input matrix is proportional to $k \, T_{\rm mult} + (m+n) k^2$,
+where $T_{\rm mult}$ denotes the cost of a matrix--vector multiplication with
+the input matrix and the constant of proportionality is small.
+We can also apply randomized methods using a Gaussian test matrix
+$\mtx{\Omega}$ to complete the factorization at the same cost,
+$\bigO(k \, T_{\rm mult} + (m+n)k^2)$ flops.
+
+%When $\mtx{A}$ is sparse or structured, it can often be applied rapidly to a
+%vector. In this case, Krylov subspace methods such as the Lanczos or Arnoldi
+%algorithmis are prescribed. It is difficult to summarize
+%the computational cost of such methods since it depends strongly on properties
+%of the input matrix, on the choice of ``starting vector,'' and on how strenuous
+%efforts must be made to stabilize the method (both Lanczos and Arnoldi are
+%inherently numerically unstable). For the same reasons, the error analysis of
+%such schemes is quite imprecise. At the risk of grossly simplifying the situation,
+%however, we claim that if the cost of performing a matrix-vector multiplication is $T_{\rm mult}$,
+%then the ``typical cost'' of approximating the $k$ leading singular vectors of an input matrix is
+%proportional to $k \, T_{\rm mult} + (m+n)k^2$, with a small constant of proportionality.
+
+With a given budget of floating-point operations, Krylov methods
+sometimes deliver a more accurate approximation than randomized
+algorithms.  Nevertheless, the methods described in this survey have at least
+two powerful advantages over Krylov methods.  First, the randomized schemes
+are inherently stable, and they come with very strong performance guarantees
+that do not depend on %properties of any starting vector or any
+subtle spectral properties of the input matrix.  Second, the matrix--vector multiplies
+required to form $\mtx{A\Omega}$ can be performed \emph{in parallel}.  This
+fact allows us to restructure the calculations to take full advantage of the
+computational platform, which can lead to dramatic accelerations in practice,
+especially for parallel and distributed machines.
+
+%In this environment, we can apply randomized methods using a Gaussian test
+%matrix $\mtx{\Omega}$ to complete the factorization at the same cost,
+%$\bigO(k \, T_{\rm mult} + (m+n)k^2)$ flops. There exist situations in which
+%Krylov methods result in a more accurate approximation than the randomized
+%schemes for a given computational cost. However, the methods described in this
+%survey have at least two powerful advantages over Krylov methods. First, the randomized
+%schemes are inherently stable, and come with strong performance guarantees
+%that do not depend on properties of any ``starting vector'' or any subtle
+%spectral properties of the input matrix. Second, the matrix--vector multiplies
+%required to form $\mtx{A\Omega}$ can be performed \emph{in parallel}. The
+%flexibility to restructure the computation often leads to dramatic accelerations
+%in practice, in particular when executed ``out-of-core'' or on parallel
+%computers.
+
+A more detailed comparison or randomized schemes and Krylov subspace methods
+is given in \S\ref{sec:fastmatvec}.
+
+\subsubsection{Matrices for which matrix--vector products can be rapidly evaluated}
+\label{sec:fastmatvec}
+
+%\pgnotate{The word ``where'' in the title seems funny to me. Maybe ``Matrices
+%for which \dots''? (If you are sure the current version is OK then I'll trust
+%you but do look at it.)}
+In many problems in data mining and scientific computing, the cost
+$T_{\rm mult}$ of performing the matrix--vector multiplication
+$\vct{x} \mapsto \mtx{A}\vct{x}$ is substantially smaller
+than the nominal cost $\bigO(mn)$ for the dense case.
+It is not uncommon that $\bigO(m + n)$ flops suffice.
+Standard examples include (i) very sparse matrices;
+(ii) structured matrices, such as T{\"o}plitz operators, that can be applied
+using the FFT or other means; and
+%(iii) matrices that arise from physical problems, such as
+%multipole approximations or discretized integral operators.
+(iii) matrices that arise from physical problems, such as
+discretized integral operators, that can be applied via, e.g.,
+the fast multipole method \cite{rokhlin1997}.
+%\pgnotate{Changed wording in point (iii).}
+
+Suppose that both $\mtx{A}$ and $\mtx{A}^\adj$ admit fast multiplies.
+The appropriate randomized approach for this scenario completes
+Stage A using Algorithm~\ref{alg:basic} with $p$ constant
+(for the fixed-rank problem)
+or Algorithm~\ref{alg:adaptive2} (for the fixed-precision problem)
+at a cost of  $(k+p) \, T_{\rm mult} + \bigO(k^2 m)$ flops.
+For Stage B, we invoke Algorithm~\ref{alg:Atranspose}, which
+requires $(k+p) \, T_{\rm mult} + \bigO(k^2 (m + n))$ flops.
+The total cost $T_{\rm sparse}$ satisfies
+\begin{equation}
+\label{eq:sparsealg-cost}
+T_{\rm sparse} = 2\,(k + p)\, T_{\rm mult} + \bigO(k^2 (m + n)).
+\end{equation}
+As a rule of thumb, the approximation error of this procedure satisfies
+\begin{equation}
+\label{eq:sparsealg-error}
+\norm{ \mtx{A} - \mtx{U\Sigma V}^\adj } \lesssim \sqrt{kn} \cdot \sigma_{k+1}.
+\end{equation}
+The estimate \eqref{eq:sparsealg-error} follows from Corollary~\ref{cor:tail-spec-error-gauss}
+and the discussion in~\S\ref{sec:postSVD}.  Actual errors are usually smaller.
+
+When the singular spectrum of $\mtx{A}$ decays slowly,
+we can incorporate $q$ iterations of the power method
+(Algorithm~\ref{alg:poweriteration}) to obtain superior
+solutions to the fixed-rank problem.
+The computational cost increases to, cf.~\eqref{eq:sparsealg-cost},
+\begin{equation}
+\label{eq:sparsealg-cost2}
+T_{\rm sparse} = (2q+2)\,(k + p) \, T_{\rm mult} + \bigO(k^2 (m + n)),
+\end{equation}
+while the error \eqref{eq:sparsealg-error} improves to
+\begin{equation}
+\label{eq:sparsealg-error2}
+\norm{ \mtx{A} - \mtx{U\Sigma V}^\adj } \lesssim (kn)^{1/2(2q+1)} \cdot \sigma_{k+1}.
+\end{equation}
+The estimate \eqref{eq:sparsealg-error2}
+takes into account the discussion in~\S\ref{sec:avg-power-method}.
+The power scheme can also be adapted for the fixed-precision
+problem (\S\ref{sec:powerscheme}).
+
+In this setting, the classical prescription for obtaining a partial SVD
+is some variation of a Krylov-subspace method; see \S\ref{sec:krylov}.
+These methods exhibit great diversity, so it is hard to specify
+a ``typical'' computational cost.
+To a first approximation, it is fair to say
+that in order to obtain an approximate SVD of rank $k$, the cost of
+a numerically stable implementation of a Krylov method is no less than
+the cost \eqref{eq:sparsealg-cost} with $p$ set to zero. At this price,
+the Krylov method often obtains better accuracy than the basic
+randomized method obtained by combining Algorithms \ref{alg:basic} and
+\ref{alg:Atranspose}, especially for matrices whose singular values decay
+slowly. On the other hand, the randomized schemes are inherently more robust
+and allow much more freedom in organizing the computation to suit a particular
+application or a particular hardware architecture. The latter point is in
+practice of crucial importance because it is usually much faster to apply a
+matrix to $k$ vectors simultaneously than it is to execute $k$ matrix--vector
+multiplications consecutively.  In practice, blocking and parallelism can lead
+to enough gain that a few steps of the power method (Algorithm~\ref{alg:poweriteration})
+can be performed more quickly than $k$ steps of a Krylov method.
+
+\lsp
+
+\begin{remark} \rm
+Any comparison between randomized sampling schemes and Krylov variants
+becomes complicated because of the fact that ``basic'' Krylov schemes such
+as Lanczos \cite[p.~473]{golub} or Arnoldi \cite[p.~499]{golub}
+are inherently unstable. To obtain numerical robustness, we must incorporate
+sophisticated modifications such as restarts, reorthogonalization procedures, etc.
+Constructing a high-quality implementation is sufficiently hard that the authors
+of a popular book on ``numerical recipes''
+qualify their treatment of spectral computations as follows
+\cite[p.~567]{2007_numerical_recipes}:
+
+\lsp
+
+\begin{quotation}
+\noindent
+You have probably gathered by now that the solution of eigensystems is a fairly complicated business.
+It is. It is one of the few subjects covered in this book for which we do \emph{not} recommend that you avoid
+canned routines. On the contrary, the purpose of this chapter is precisely to give you some appreciation of what
+is going on inside such canned routines, so that you can make intelligent choices about using them, and intelligent
+diagnoses when something goes wrong.
+\end{quotation}
+
+\lsp
+
+\noindent
+Randomized sampling does not eliminate the difficulties referred to in this quotation;
+however it reduces the task of computing a \emph{partial} spectral decomposition
+of a very large matrix to the task of computing a \emph{full} decomposition of
+a small dense matrix.  (For example,~in Algorithm \ref{alg:Atranspose}, the input matrix
+$\mtx{A}$ is large and $\mtx{B}$ is small.) The latter task is much better understood
+and is eminently suitable for using canned routines.  Random sampling schemes
+interact with the large matrix only through matrix--matrix products, which can
+easily be implemented by a user in a manner appropriate to the application
+and to the available hardware.
+
+%In contrast, even a very simple randomized randomized sampling scheme,
+%such as the combination of Algorithms \ref{alg:basic} and \ref{alg:Atranspose},
+%is inherently numerically stable and comes with proven error bounds.
+%The randomized sampling in itself does not eliminate the intricacies involved
+%in computing a spectral decomposition, but it reduces the size of the matrix
+%that needs to be decomposed to the point that methods for computing a \textbf{full} spectral
+%decomposition can be employed (\textit{e.g.}~in line 2 of Algorithm \ref{alg:Atranspose}).
+%This task is much better understood, and can be executed using standard packages.
+
+The comparison is further complicated by the fact that there is significant
+overlap between the two sets of ideas. Algorithm~\ref{alg:poweriteration} is
+conceptually similar to a ``block Lanczos method'' \cite[p.~485]{golub} with a random starting matrix.
+Indeed, we believe that there are significant opportunities for cross-fertilization
+in this area.  Hybrid schemes that combine the best ideas from both
+fields may perform very well.
+\end{remark}
+
+%We remark that there are strong connections between the ideas
+%underlying on the one hand Krylov-methods with a random starting
+%vector, and on the other, the randomized sampling schemes
+%described in Sections \ref{sec:algorithm} and
+%\ref{sec:otherfactorizations}. These connections, and the
+%possibility of developing hybrid techniques, are discussed in
+%Remark \ref{remark:krylov}.
+
+%\begin{remark}\rm
+%\label{remark:krylov}
+%Jumping ahead of events slightly, we mention that the randomized sampling techniques described
+%in this paper are conceptually related to Krylov subspace methods with a random starting vector
+%in that they both restrict the matrix $\mtx{A}$ to a random subspace and then process the
+%restricted matrix. A difference is that while Krylov methods restrict to the subspace $\mathcal{V}_{p}(\omega)$
+%described above, the methods of this paper use the subspace
+%$\mathcal{W}^{(\ell)} = \mbox{Span}\{\mtx{A}\vct{\omega}^{(1)},\,
+%\mtx{A}\vct{\omega}^{(2)},\,\dots,\mtx{A}\vct{\omega}^{(\ell)}\}$,
+%where $\vct{\omega}^{(1)},\,\dots,\,\vct{\omega}^{(\ell)}$ is a sequence of random vectors.
+%Recently, hybrid techniques that combine the best aspects of Krylov techniques
+%with the best aspects of randomized sampling have been
+%developed, see \cite{tygert_szlam,roweis} and Section \ref{sec:powerscheme}.
+%Roughly speaking, the idea of the hybrid techniques is to restrict the matrix
+%to a subspace of the form
+%$\mathcal{U}_{p}^{(\ell)} =
+%\mathcal{V}_{p}(\vct{\omega}^{(1)}) \times
+%\mathcal{V}_{p}(\vct{\omega}^{(2)}) \times \cdots \times
+%\mathcal{V}_{p}(\vct{\omega}^{(\ell)})$
+%for suitably chosen integers $\ell$ and $p$.
+%It seems to us likely that much could be gained by exploring such hybrid schemes further.
+%\end{remark}
+
+\subsection{A general dense matrix stored in slow memory or streamed}
+
+When the input matrix is too large to fit in core memory, the cost of
+transferring the matrix from slow memory typically dominates the cost
+of performing the arithmetic.  The standard techniques for low-rank
+approximation described in~\S\ref{sec:intro_fits in RAM} require
+$\bigO(k)$ passes over the matrix, which can be prohibitively expensive.
+
+In contrast, the proto-algorithm of~\S\ref{sec:proto-algorithm}
+requires only one pass over the data to produce the approximate basis
+$\mtx{Q}$ for Stage A of the approximation framework.
+This straightforward approach, unfortunately, is not accurate enough for
+matrices whose singular spectrum decays slowly, but we can address this
+problem using very few (say, $2$ to $4$) additional passes over the
+data~\cite{tygert_szlam}.
+See \S\ref{sec:pca} or~\S\ref{sec:powerscheme} for more discussion.
+
+%When a matrix is too large to fit in fast memory, the cost of
+%accessing the matrix from slow memory typically dominates the cost
+%of performing floating point operations. Standard techniques for
+%computing low-rank approximations such as those mentioned in Section
+%\ref{sec:intro_fits in RAM} require $O(k)$ passes over the matrix,
+%which often makes them prohibitively expensive. In contrast, a
+%randomized technique such as the proto-algorithm described in
+%Section \ref{sec:proto-algorithm} requires only one pass to
+%determine an approximate basis, and then one more for the
+%post-processing required to compute an approximate SVD. Such a
+%simple-minded approach is sometimes not accurate enough to deal with
+%matrices that have low signal-to-noise ratios, but this can be
+%remedied by allowing a few (say $2$ or $4$) additional passes over
+%the data, see \cite{tygert_szlam} and Section \ref{sec:powerscheme}.
+
+Typically, Stage B uses one additional pass over the matrix to
+construct the approximate SVD.
+With slight modifications, however, the two-stage randomized scheme
+can be revised so that it only makes a single pass over the
+data.  Refer to~\S\ref{sec:onepass} for information.
+
+%\subsection*{1.4-NEW: Performance of randomized techniques}
+%To facilitate a comparison between randomized techniques for computing
+%approximate low-rank factorizations and traditional techniques (as
+%described in, e.g., \cite{Bjo96:Numerical-Methods,golub,trefethen_bau})
+%we focus on the task of computing an approximate singular value
+%decomposition (SVD) of an $m\times n$ matrix $\mtx{A}$ of numerical rank $k$.
+
+%A standard technique for computing a partial SVD is to first compute a
+%(rank-revealing) QR factorization of $\mtx{A}$, and then manipulate the factors
+%in the resulting rank-$k$ factorization (cf.~Section \ref{sec:partial_decomp}).
+%A simple randomized scheme for solving the same problem is to first employ the
+%proto-algorithm described in Section \ref{sec:proto-algorithm} to construct a basis for
+%the range of $\mtx{A}$, and then apply the post-processing scheme outlined
+%in Section \ref{sec:framework} to produce the factors in the SVD.
+%Both of these approaches require $O(mnk)$ flops. The principal advantage to the
+%simple randomized scheme in this environment has to do with how the data is accessed.
+%The traditional techniques require extensive random access to the matrix making them
+%very slow unless the matrix fits in fast memory, and difficult to implement efficiently
+%on multi-core architectures. In contrast, the time-consuming part of the randomized
+%scheme consists of two matrix-matrix multiplications which can easily be executed
+%out-of-core or on multiple processors. With slight modifications, the randomized
+%scheme can even be executed on a matrix that it streamed so that each entry is
+%seen only once.
+
+%Greater flexibility is not the only advantage conferred by randomized techniques.
+%We will demonstrate that modifications to the basic randomized scheme lead to algorithms
+%that outperform traditional techniques in terms of accuracy and robustness, and
+%also in certain environments in asymptotic flop counts. For instance:
+%\begin{itemize}
+%\item It is possible to construct a random matrix $\mtx{\Omega}$ such that the
+%matrix-matrix product $\mtx{A}\mtx{\Omega}$ can be evaluated rapidly. This leads
+%to algorithms with asymptotic cost $O(mn\log(k))$. (See \cite{random2} and Section
+%\ref{sec:ailonchazelle}.)
+%\item When $\mtx{A}$ is sparse or can by other means be rapidly applied to a vector,
+%the asymptotic cost of both the randomized schemes and standard techniques (such as
+%Lanczos) is $O(k\,T_{\rm mult} + (m+n)k^{2})$ where $T_{\rm mult}$ is the cost of
+%a matrix-vector multiplication. Randomized techniques again have an advantage in
+%terms of allowing greater flexibility in organizing the computation. For instance,
+%all the $O(k)$ matrix-vector multiplications can be evaluated simultaneously.
+%\item By incorporating ideas from power iteration schemes into the randomized
+%sampling techniques, randomized schemes have been constructed that achieve higher
+%accuracy than traditional techniques, in particular for very large matrices.
+%(See \cite{tygert_szlam} and Section \ref{sec:powerscheme}.)
+%\end{itemize}
+%%Section \ref{sec:standard_techniques} provides further details on the costs of standard techniques,
+%Section \ref{sec:costs} describes the relative benefits and drawbacks of randomized techniques
+%in detail.
+
+\subsubsection{Example: Randomized SVD}
+\label{sec:pca}
+
+We conclude this introduction with a short discussion of how these ideas allow
+us to perform an approximate SVD of a large data matrix,
+which is a compelling application of randomized matrix approximation~\cite{tygert_szlam}.
+
+%Suppose that $\widetilde{\mtx{A}}$ is an $m \times n$ matrix holding statistical data, where each
+%column of $\widetilde{\mtx{A}}$ carries the data from one experiment and each row contains
+%measurements of a single variable.
+%We form the \term{centered} matrix $\mtx{A}$ by subtracting the empirical mean from each variable.
+%In other terms, $a_{ij} = \tilde{a}_{ij} - (1/n)\sum_{j}\tilde{a}_{ij}$
+%so that each row of $\mtx{A}$ sums to zero.
+%The first $k$ principal components of the data (i.e., the directions of maximal variance)
+%are the $k$ dominant left singular vectors of the input matrix $\mtx{A}$.
+
+%\pgnotate{Rewrote this paragraph.}
+%Suppose that $\mtx{A}$ is an $m \times n$ matrix, whose columns each contains
+%observations of $m$ random variables.  Assume each row sums to zero, which
+%indicates that the random variables have an empirical mean of zero.  Then the
+%first $k$ principal components for the data (i.e., the directions of maximal variance)
+%are the $k$ dominant left singular vectors of the input matrix $\mtx{A}$.
+
+%We can evidently perform PCA by computing an approximate SVD of the centered matrix
+%$\mtx{A}$, and the two-stage randomized method offers a natural approach.
+%Unfortunately, the simplest version of this scheme is inadequate for PCA
+%because the singular spectrum of the data matrix often decays quite slowly.
+%To address this difficulty, we incorporate $q$ steps of a power iteration
+%where $q = 1, 2$ is usually sufficient in practice.
+%The complete scheme appears below\pgnotate{Fix above/below once we get to a final version.}
+%as the Randomized PCA algorithm. For refinements, see the discussion
+%in~\S\S\ref{sec:algorithm}--\ref{sec:otherfactorizations}.
+
+The two-stage randomized method offers a natural approach to SVD computations.
+Unfortunately, the simplest version of this scheme is inadequate in many
+applications because the singular spectrum of the input matrix may decay
+slowly.  To address this difficulty, we incorporate $q$ steps of a power
+iteration, where $q = 1$ or $q = 2$ usually suffices in practice.  The
+complete scheme appears in the box labeled Prototype for Randomized SVD.
+For most applications, it is important to incorporate additional refinements,
+as we discuss in \S\S\ref{sec:algorithm}--\ref{sec:otherfactorizations}.
+
+\begin{figure}
+\begin{center}
+\framebox{\begin{minipage}{.9\textwidth}
+\begin{center}
+\textsc{Prototype for Randomized SVD}
+\end{center}
+
+\lsp
+
+\textit{Given an $m\times n$ matrix $\mtx{A}$, a target number $k$ of singular vectors,
+and an exponent $q$ (say $q=1$ or $q=2$), this procedure computes an approximate
+rank-$2k$ factorization $\mtx{U\Sigma V}^\adj$, where $\mtx{U}$ and $\mtx{V}$
+are orthonormal, and $\mtx{\Sigma}$ is nonnegative and diagonal.}
+
+\lsp
+
+{\bf Stage A:}
+
+\begin{tabbing}
+\hspace{5mm} \= \hspace{5mm} \= \hspace{5mm} \= \hspace{5mm} \= \kill
+\anum{1} \>Generate an $n \times 2k$ Gaussian test matrix $\mtx{\Omega}$.\\
+
+\anum{2} \>Form $\mtx{Y} = (\mtx{AA}^\adj)^q \mtx{A\Omega}$ by multiplying alternately with $\mtx{A}$ and $\mtx{A}^\adj$.\\
+
+\anum{3} \>Construct a matrix $\mtx{Q}$ whose columns form an orthonormal basis for \\
+         \>the range of $\mtx{Y}$.
+\end{tabbing}
+
+\lsp
+
+{\bf Stage B:}
+
+\begin{tabbing}
+\hspace{5mm} \= \hspace{5mm} \= \hspace{5mm} \= \hspace{5mm} \= \kill
+\anum{4}    \>Form $\mtx{B} = \mtx{Q}^{\adj}\mtx{A}$.\\
+
+\anum{5}    \>Compute an SVD of the small matrix: $\mtx{B} = \widetilde{\mtx{U}}\mtx{\Sigma}\mtx{V}^{\adj}$.\\
+
+\anum{6}    \>Set $\mtx{U} = \mtx{Q}\widetilde{\mtx{U}}$.
+\end{tabbing}
+
+\lsp
+
+{\bf Note:} The computation of $\mtx{Y}$ in Step 2 is vulnerable to round-off errors.
+When high accuracy is required, we must incorporate an orthonormalization
+step between each application of $\mtx{A}$
+and $\mtx{A}^{\adj}$; see Algorithm \ref{alg:subspaceiteration}.
+\end{minipage}}
+\end{center}
+\end{figure}
+
+The Randomized SVD procedure requires %\pgnotate{Changed ''performs'' to ``requires''.}
+only $2(q+1)$ passes over the matrix, so it is
+efficient even for matrices stored out-of-core.
+The flop count satisfies
+$$
+T_{\rm rand SVD} = (2q+2)\,k \, T_{\rm mult} + \bigO(k^2 (m + n)),
+$$
+where $T_{\rm mult}$ is the flop count of a matrix--vector multiply
+with $\mtx{A}$ or $\mtx{A}^\adj$.
+We have the following theorem on the performance of this method
+in exact arithmetic, which is a consequence of
+Corollary~\ref{cor:power-method-spec-gauss}.
+
+%\footnote{Modified here to clarify
+%exactly how many matrix-vector multiplications are needed.
+%I think that ideally, one would write
+%$$
+%T_{\rm rand SVD} = (2q+2)\,T_{\rm mult}(k) + \bigO(k^2 (m + n)),
+%$$
+%where $T_{\rm mult}(k)$ is the cost of applying $\mtx{A}$ or $\mtx{A}^{\adj}$
+%to a matrix with $k$ columns. It's probably not worth the effort to change
+%things at this point, though.
+%}
+
+\lsp
+
+\begin{theorem}
+Suppose that $\mtx{A}$ is a real $m \times n$ matrix.  Select
+an exponent $q$ and a target number $k$ of singular vectors,
+where $2 \leq k \leq 0.5 \min\{m,n\}$.
+%$ \leq k \leq 0.5 \min\{m,n\}$.
+Execute the Randomized SVD algorithm to obtain a rank-$2k$
+factorization $\mtx{U\Sigma V}^\adj$.  Then
+\begin{equation}
+\label{eq:intro_pca_bd}
+\Expect \norm{ \mtx{A} - \mtx{U\Sigma V}^\adj }
+    \leq \left[ 1 + 4 \sqrt{\frac{2\min\{m,n\}}{k-1}} \right]^{1/(2q+1)} \sigma_{k+1},
+\end{equation}
+where $\Expect$ denotes expectation with respect to the
+random test matrix and $\sigma_{k+1}$ is the $(k+1)$th
+singular value of $\mtx{A}$.
+\end{theorem}
+
+\lsp
+
+This result is new.
+%  For a worst-case input matrix, it is sharp up to the precise
+%value of the constants.  %\pgnotate{Specify which constants.}
+Observe that the bracket in~\eqref{eq:intro_pca_bd} is essentially
+the same as the bracket in the basic error bound~\eqref{eq:intro_err_bd}.
+We find that the power iteration drives the leading constant to one
+exponentially fast as the power $q$ increases.
+The rank-$k$ approximation of $\mtx{A}$ can never achieve an error
+smaller than $\sigma_{k+1}$, so the randomized procedure computes $2k$
+approximate singular vectors that capture as much of the matrix
+as the first $k$ actual singular vectors.
+
+In practice, we can truncate the approximate SVD, retaining only the
+first $k$ singular values and vectors.  Equivalently, we
+replace the diagonal factor $\mtx{\Sigma}$ by the matrix
+$\mtx{\Sigma}_{(k)}$ formed by zeroing out all but the
+largest $k$ entries of $\mtx{\Sigma}$.  For this truncated SVD, we have the error bound
+\begin{equation} \label{eqn:pca_trunc}
+\Expect \norm{ \mtx{A} - \mtx{U} \mtx{\Sigma}_{(k)} \mtx{V}^\adj }
+	\leq \sigma_{k+1} + \left[ 1 + 4 \sqrt{\frac{2\min\{m,n\}}{k-1}} \right]^{1/(2q+1)} \sigma_{k+1}.
+\end{equation}
+In words, we pay no more than an additive term $\sigma_{k+1}$ when we
+perform the truncation step.  Our numerical experience suggests that
+the error bound~\eqref{eqn:pca_trunc} is pessimistic.
+See Remark~\ref{rem:truncation} and~\S\ref{sec:truncation-analysis} for some
+discussion of truncation.
+
+
+\subsection{A modified scheme for matrices whose singular values decay slowly}
+\label{sec:powerscheme}
+
+The techniques described in~\S\ref{sec:proto_revisited} and~\S\ref{sec:algorithm1}
+work well for matrices whose singular values exhibit some decay,
+but they may produce a poor basis when the input matrix has a flat singular spectrum
+or when the input matrix is very large. In this section, we describe techniques,
+originally proposed in~\cite{Gu-personal,tygert_szlam}, for improving the accuracy
+of randomized algorithms in these situations.
+Related earlier work includes~\cite{roweis} and the literature on
+classical orthogonal iteration methods \cite[p.~332]{golub}.
+
+The intuition behind these techniques is that
+the singular vectors associated with small singular values
+interfere with the calculation, so we reduce their weight relative to
+the dominant singular vectors by taking powers of the matrix to be analyzed.
+More precisely, we wish to apply the randomized sampling scheme
+to the matrix $\mtx{B} = (\mtx{A}\mtx{A}^\adj)^q \mtx{A}$, where $q$ is a
+small integer.  The matrix $\mtx{B}$ has the same singular vectors as
+the input matrix $\mtx{A}$, but its singular values decay much more quickly:
+\begin{equation}
+\label{eq:svds_of_B}
+\sigma_j( \mtx{B} ) = \sigma_j( \mtx{A} )^{2q+1},
+\quad j = 1, 2, 3, \dots.
+\end{equation}
+We modify Algorithm \ref{alg:basic} by replacing the formula $\mtx{Y} = \mtx{A}\mtx{\Omega}$
+in Step 2 by the formula
+$\mtx{Y} = \mtx{B}\mtx{\Omega} = \bigl(\mtx{A}\mtx{A}^{*}\bigr)^{q}\mtx{A}\mtx{\Omega}$,
+and we obtain Algorithm~\ref{alg:poweriteration}.
+
+\begin{figure}
+\begin{center}
+\fbox{
+\begin{minipage}{.9\textwidth}
+\begin{center}
+\textsc{Algorithm \ref{alg:poweriteration}: Randomized Power Iteration}
+\end{center}
+
+\lsp
+
+\textit{Given an $m\times n$ matrix $\mtx{A}$ and integers $\ell$ and $q$,
+this algorithm computes an $m \times \ell$ orthonormal matrix $\mtx{Q}$
+whose range approximates the range of $\mtx{A}$.}
+
+\lsp
+
+\begin{tabbing}
+\hspace{5mm} \= \hspace{5mm} \= \hspace{5mm} \= \hspace{5mm} \= \kill
+\anum{1} \>Draw an $n\times \ell$ Gaussian random matrix $\mtx{\Omega}$.\\
+\anum{2} \>Form the $m\times \ell$ matrix $\mtx{Y} = (\mtx{A}\mtx{A}^{\adj})^{q}\mtx{A}\mtx{\Omega}$ via alternating application\\
+         \>of $\mtx{A}$ and $\mtx{A}^{\adj}$.\\
+\anum{3} \>Construct an $m \times \ell$ matrix $\mtx{Q}$ whose columns form an orthonormal\\
+         \> basis for the range of $\mtx{Y}$, e.g., via the QR factorization $\mtx{Y} = \mtx{Q}\mtx{R}$.
+\end{tabbing}
+
+\lsp
+
+{\bf Note:} This procedure is vulnerable to round-off errors; see Remark \ref{remark:roundoff_in_powerscheme}.
+The recommended implementation appears as Algorithm~\ref{alg:subspaceiteration}.
+\end{minipage}}
+\end{center}
+%\caption{trash}
+%\label{alg:poweriteration}
+\end{figure}
+
+Algorithm~\ref{alg:poweriteration} requires $2q+1$ times as many
+matrix--vector multiplies as Algorithm~\ref{alg:basic}, but is far
+more accurate in situations where the singular values of $\mtx{A}$
+decay slowly.  A good
+heuristic is that when the original scheme produces a basis whose
+approximation error is within a factor $C$ of the optimum, the power
+scheme produces an approximation error within $C^{1/(2q+1)}$ of the
+optimum.  In other words, the power iteration drives the approximation
+gap to one exponentially fast.  See Theorem~\ref{thm:power-method}
+and~\S\ref{sec:avg-power-method} for the details.
+
+Algorithm~\ref{alg:poweriteration} targets the fixed-rank problem.  To address the fixed-precision
+problem, we can incorporate the error estimators described in~\S\ref{sec:aposteriori}
+to obtain an adaptive scheme analogous with Algorithm~\ref{alg:adaptive2}.
+In situations where it is critical to achieve near-optimal approximation errors,
+one can increase the oversampling beyond our standard recommendation
+$\ell = k + 5$ all the way to $\ell = 2k$ without changing the
+scaling of the asymptotic computational cost.  %\pgnotate{Added ``the scaling of''.}
+A supporting analysis appears
+in Corollary~\ref{cor:power-method-spec-gauss}.
+
+\lsp
+
+\begin{remark} \rm
+\label{remark:roundoff_in_powerscheme}
+Unfortunately, when Algorithm \ref{alg:poweriteration} is executed in floating point arithmetic,
+rounding errors will extinguish all information pertaining to singular modes associated with
+singular values that are small compared with $\norm{\mtx{A}}$. (Roughly, if machine
+precision is $\mu$, then all information associated with singular values smaller than
+$\mu^{1/(2q+1)} \norm{\mtx{A}}$ is lost.) This problem can easily be remedied
+by orthonormalizing
+the columns of the sample matrix between each application of $\mtx{A}$ and $\mtx{A}^{\adj}$.
+The resulting scheme, summarized as Algorithm~\ref{alg:subspaceiteration}, is algebraically
+equivalent to Algorithm~\ref{alg:poweriteration} when executed in exact arithmetic~\cite{stewart1969,Szlam10}.
+We recommend Algorithm~\ref{alg:subspaceiteration} because its computational costs are similar to
+Algorithm~\ref{alg:poweriteration}, even though the former is substantially more accurate in
+floating-point arithmetic.
+
+%Further improvement in accuracy (at no additional cost in terms of applications of $\mtx{A}$ and $\mtx{A}^{\adj}$)
+%can be obtained by keeping \emph{all} sample matrices $\{\mtx{Y}_{j}\}_{j=0}^{q}$ generated in
+%Algorithm \ref{alg:subspaceiteration} and constructing an $n\times (q+1)\,\ell$ matrix $\mtx{Q}$
+%whose columns form an orthonormal basis for the ``extended'' sample
+%matrix $\mtx{Y} = [\mtx{Y}_{0},\,\mtx{Y}_{1},\,\dots,\,\mtx{Y}_{q}]$.\footnote{The last sentence here could possibly be cut.
+%If we do that, then we could also simplify notation in Algorithm \ref{alg:subspaceiteration}.}
+\end{remark}
+
+\lsp
+
+\begin{figure}
+\begin{center}
+\fbox{
+\begin{minipage}{.9\textwidth}
+\begin{center}
+\textsc{Algorithm \ref{alg:subspaceiteration}: Randomized Subspace Iteration}
+\end{center}
+
+\lsp
+
+\textit{Given an $m\times n$ matrix $\mtx{A}$ and integers $\ell$ and $q$,
+this algorithm computes an $m \times \ell$ orthonormal matrix $\mtx{Q}$
+whose range approximates the range of $\mtx{A}$.}
+
+\lsp
+
+\begin{tabbing}
+\hspace{5mm} \= \hspace{5mm} \= \hspace{5mm} \= \hspace{5mm} \= \kill
+\anum{1} \> Draw an $n\times \ell$ standard Gaussian matrix $\mtx{\Omega}$.\\
+\anum{2} \> Form $\mtx{Y}_{0} = \mtx{A}\mtx{\Omega}$ and compute its QR factorization $\mtx{Y}_{0} = \mtx{Q}_{0}\mtx{R}_{0}$.\\
+\anum{3} \> \textbf{for} $j = 1,\,2,\,\dots,\,q$\\
+\anum{4} \> \> Form $\widetilde{\mtx{Y}}_{j} = \mtx{A}^{\adj}\mtx{Q}_{j-1}$ and compute its QR factorization
+               $\widetilde{\mtx{Y}}_{j} = \widetilde{\mtx{Q}}_{j}\widetilde{\mtx{R}}_{j}$.\\
+\anum{5} \> \> Form $\mtx{Y}_{j} = \mtx{A}\widetilde{\mtx{Q}}_{j}$ and compute its QR factorization
+               $\mtx{Y}_{j} = \mtx{Q}_{j}\mtx{R}_{j}$.\\
+\anum{6} \> \textbf{end}\\
+\anum{7} \> $\mtx{Q} = \mtx{Q}_{q}$.
+\end{tabbing}
+\end{minipage}}
+\end{center}
+\end{figure}
+
+
+
+\subsubsection{Single-pass algorithms}
+\label{sec:onepass}
+
+The techniques described in~\S\S\ref{sec:postSVD}--\ref{sec:postpsd}
+all require us to revisit the input matrix.  This may not be
+feasible in environments where the matrix is too large to be
+stored.  In this section, we develop a method that requires just
+one pass over the matrix to construct not only an approximate
+basis but also a complete factorization.  Similar techniques
+appear in~\cite{random2} and~\cite{2009_clarkson_woodruff}.
+
+For motivation, we begin with the case where $\mtx{A}$ is Hermitian.
+Let us recall the proto-algorithm from~\S\ref{sec:proto-algorithm}:
+Draw a random test matrix $\mtx{\Omega}$; form the sample matrix
+$\mtx{Y} = \mtx{A\Omega}$; then construct a basis $\mtx{Q}$ for the
+range of $\mtx{Y}$.  It turns out that the matrices $\mtx{\Omega}$, $\mtx{Y}$,
+and $\mtx{Q}$ contain all the information we need to approximate
+$\mtx{A}$.
+
+To see why, define the (currently unknown) matrix $\mtx{B}$
+via $\mtx{B} = \mtx{Q}^\adj \mtx{AQ}$.
+%\begin{equation}
+%\label{eq:def_B_herm}
+%\mtx{B} = \mtx{Q}^{\adj}\mtx{AQ}.
+%\end{equation}
+Postmultiplying the definition by $\mtx{Q}^\adj \mtx{\Omega}$, we obtain the identity
+$\mtx{BQ}^\adj \mtx{\Omega} = \mtx{Q}^\adj \mtx{AQQ}^\adj \mtx{\Omega}$.
+The relationships $\mtx{AQQ}^\adj \approx \mtx{A}$ and $\mtx{A\Omega} = \mtx{Y}$
+show that $\mtx{B}$ must satisfy
+\begin{equation}
+\label{eq:tuss}
+\mtx{BQ}^{\adj}\mtx{\Omega} \approx \mtx{Q}^{\adj}\mtx{Y}.
+\end{equation}
+All three matrices $\mtx{\Omega}$, $\mtx{Y}$, and $\mtx{Q}$
+are available, so we can solve~\eqref{eq:tuss} to obtain the matrix $\mtx{B}$.
+Then the low-rank factorization $\mtx{A} \approx \mtx{QBQ}^\adj$ can
+be converted to an eigenvalue decomposition via familiar techniques.
+The entire procedure requires $\bigO(k^2 n)$ flops, and it is summarized
+as Algorithm~\ref{alg:postsym}.
+
+\lsp
+
+\begin{figure}[htb]
+\begin{center}
+\fbox{
+\begin{minipage}{.9\textwidth}
+\begin{center}
+\textsc{Algorithm \ref{alg:postsym}: Eigenvalue Decomposition in One Pass}
+\end{center}
+
+\lsp
+
+\textit{Given an Hermitian matrix $\mtx{A}$,
+a random test matrix $\mtx{\Omega}$,
+a sample matrix $\mtx{Y} = \mtx{A}\mtx{\Omega}$,
+and an orthonormal matrix $\mtx{Q}$ that verifies
+\eqref{eq:fixed_precision2} and $\mtx{Y} = \mtx{Q}\mtx{Q}^{\adj}\mtx{Y}$,
+this algorithm computes an approximate eigenvalue decomposition
+$\mtx{A} \approx \mtx{U\Lambda U}^{\adj}$.}
+
+\lsp
+
+\begin{tabbing}
+\hspace{5mm} \= \hspace{5mm} \= \hspace{5mm} \= \hspace{5mm} \= \kill
+
+\anum{1}  \>  Use a standard least-squares solver to find an Hermitian matrix $\mtx{B}_{\rm approx}$\\
+\>that approximately satisfies the equation
+$\mtx{B}_{\rm approx} (\mtx{Q}^{\adj}\mtx{\Omega}) \approx \mtx{Q}^{\adj}\mtx{Y}$.\\
+
+
+\anum{2} \>   Compute the eigenvalue decomposition
+$
+\mtx{B}_{\rm approx} = \mtx{V\Lambda V}^{\adj}.
+$\\
+
+\anum{3} \>   Form the product
+$
+\mtx{U} = \mtx{QV}.
+$
+\end{tabbing}
+\end{minipage}}
+\end{center}
+%\caption{trash}
+%\label{alg:postsym}
+\end{figure}
+
+When $\mtx{A}$ is not Hermitian, it is still possible to devise
+single-pass algorithms, but we must modify the initial Stage A
+of the approximation framework to simultaneously construct bases
+for the ranges of $\mtx{A}$ and $\mtx{A}^{\adj}$:
+\lsp
+\begin{enumerate}
+\item   Generate random matrices $\mtx{\Omega}$ and $\widetilde{\mtx{\Omega}}$.
+\item   Compute $\mtx{Y} = \mtx{A\Omega}$ and
+$\widetilde{\mtx{Y}} = \mtx{A}^{\adj}\widetilde{\mtx{\Omega}}$ in a single pass over $\mtx{A}$.
+\item   Compute QR factorizations $\mtx{Y} = \mtx{QR}$ and
+$\widetilde{\mtx{Y}} = \widetilde{\mtx{Q}}\widetilde{\mtx{R}}$.
+\end{enumerate}
+\lsp
+This procedure results in matrices $\mtx{Q}$ and $\widetilde{\mtx{Q}}$ such that
+$\mtx{A} \approx \mtx{QQ}^{\adj}\mtx{A}\widetilde{\mtx{Q}}\widetilde{\mtx{Q}}^{\adj}$.
+The reduced matrix we must approximate is
+$\mtx{B} = \mtx{Q}^{\adj}\mtx{A}\widetilde{\mtx{Q}}$.
+In analogy with~\eqref{eq:tuss}, we find that
+\begin{equation}
+\label{eq:milk1}
+\mtx{Q}^{\adj}\mtx{Y} =
+\mtx{Q}^{\adj}\mtx{A\Omega} \approx
+\mtx{Q}^{\adj}\mtx{A}\widetilde{\mtx{Q}}\widetilde{\mtx{Q}}^{\adj}\mtx{\Omega} =
+\mtx{B}\widetilde{\mtx{Q}}^{\adj}\mtx{\Omega}.
+\end{equation}
+An analogous calculation shows that $\mtx{B}$ should also satisfy
+\begin{equation}
+\label{eq:milk2}
+\widetilde{\mtx{Q}}^{\adj}\widetilde{\mtx{Y}} \approx \mtx{B}^{\adj}\mtx{Q}^{\adj}\widetilde{\mtx{\Omega}}.
+\end{equation}
+Now, the reduced matrix $\mtx{B}_{\rm approx}$ can be determined by finding a
+minimum-residual solution to the system of relations~\eqref{eq:milk1} and~\eqref{eq:milk2}.
+
+\lsp
+
+\begin{remark} \rm
+The single-pass approaches described in this
+section can degrade the approximation error
+in the final decomposition significantly.
+To explain the issue, we focus on
+the Hermitian case.  It turns out that the coefficient matrix
+$\mtx{Q}^{\adj}\mtx{\Omega}$ in the linear
+system \eqref{eq:tuss} is usually ill-conditioned.
+In a worst-case scenario, the error
+$\norm{\mtx{A} - \mtx{U}\mtx{\Lambda}\mtx{U}^{\adj}}$
+in the factorization produced by Algorithm \ref{alg:postsym}
+could be larger than the error resulting from the two-pass
+method of Section \ref{sec:postsym} by a
+factor of $1/\tau_{\rm min}$, where $\tau_{\rm min}$ is the
+minimal singular value of the matrix $\mtx{Q}^{\adj}\mtx{\Omega}$.
+
+The situation can be improved by oversampling.  Suppose that
+we seek a rank-$k$ approximate eigenvalue decomposition.
+Pick a small oversampling parameter $p$.  Draw
+an $n\times (k+p)$ random matrix $\mtx{\Omega}$,
+and form the sample matrix $\mtx{Y} = \mtx{A}\mtx{\Omega}$.
+Let $\mtx{Q}$ denote the $n\times k$ matrix formed by
+the $k$ leading left singular vectors
+of $\mtx{Y}$. Now, the linear system~\eqref{eq:tuss} has a coefficient matrix $\mtx{Q}^{\adj}\mtx{\Omega}$
+of size $k \times (k+p)$, so it is overdetermined.  An
+approximate solution of this system yields a $k \times k$
+matrix $\mtx{B}$.
+\end{remark}
+
+\section{Results}
+
+\label{sec:prototheorem} A principal goal of this paper is to
+provide a detailed analysis of the performance of the
+proto-algorithm described in~\S\ref{sec:proto-algorithm}. This
+investigation produces precise error bounds, expressed in terms of
+the singular values of the input matrix. Furthermore, we determine
+how several choices of the random matrix $\mtx{\Omega}$ impact the
+behavior of the algorithm.
+
+Let us offer a taste of this theory.  The following theorem
+describes the average-case behavior of the proto-algorithm
+with a Gaussian test matrix, assuming we perform the computation
+in exact arithmetic.  This result is a simplified version of
+Theorem~\ref{thm:avg-spec-error-gauss}.
+
+\lsp
+
+\begin{theorem} %\label{thm:intro}
+Suppose that $\mtx{A}$ is a real $m \times n$ matrix.  Select
+a target rank $k \geq 2$ and an oversampling parameter $p \geq 2$,
+where $k + p \leq \min\{m,n\}$.
+Execute the proto-algorithm with
+a standard Gaussian test matrix to obtain an
+$m \times (k + p)$ matrix $\mtx{Q}$ with orthonormal columns.  Then
+\begin{equation}
+\label{eq:intro_err_bd}
+\Expect \norm{ \mtx{A} - \mtx{QQ}^\adj \mtx{A} }
+    \leq \left[ 1 + \frac{4 \sqrt{k+p}}{p-1} \cdot\sqrt{\min\{m,n\}} \right] \sigma_{k+1},
+\end{equation}
+where $\Expect$ denotes expectation with respect to the
+random test matrix and $\sigma_{k+1}$ is the $(k+1)$th
+singular value of $\mtx{A}$.
+\end{theorem}
+
+\lsp
+
+We recall that the term $\sigma_{k+1}$ appearing in \eqref{eq:intro_err_bd}
+is the smallest possible error~\eqref{eqn:mirsky} achievable with any basis
+matrix $\mtx{Q}$. The theorem asserts that, on average,
+the algorithm produces a basis whose error lies within a small
+polynomial factor of the theoretical minimum.
+%It is natural that the error bound contains one copy of $\sigma_{k+1}$ owing
+%to~\eqref{eqn:mirsky}.  At worst, the algorithm produces a basis whose
+%error is larger by a small polynomial factor.  Observe that a moderate
+%amount of oversampling results in a substantial performance gain.
+Moreover, the error bound~\eqref{eq:intro_err_bd} in the randomized
+algorithm is slightly sharper than comparable bounds for
+deterministic techniques based on rank-revealing QR algorithms~\cite{gu_rrqr}.
+
+The reader might be worried about whether the expectation provides a
+useful account of the approximation error.  Fear not: the actual outcome
+of the algorithm is {\em almost always} very close to
+%\footnote{Inserted ``very close to''}
+the typical outcome because of measure
+concentration effects.  As we discuss in~\S\ref{sec:prob-failure},
+the probability that the error satisfies
+\begin{equation} \label{eq:intro_err_prob}
+\norm{ \mtx{A} - \mtx{QQ}^\adj \mtx{A} }
+    \leq \left[ 1 + 11 \sqrt{k+p} \cdot\sqrt{\min\{m,n\}} \right] \sigma_{k+1}
+\end{equation}
+is at least $1 - 6 \cdot p^{-p}$ under very mild assumptions on $p$.
+This fact justifies the use of an oversampling term as small as $p = 5$.
+This simplified estimate is very similar to the major results in~\cite{random1}.
+
+\subsection{SRFT test matrices}
+\label{sec:SRFTs}
+
+Another way to implement the proto-algorithm from \S\ref{sec:sketchofalgorithm}
+is to use a structured random matrix so that the matrix product in Step~2
+can be performed quickly.  One type of structured random matrix that has
+been proposed in the literature is the \term{subsampled random Fourier transform},
+or SRFT, which we discussed in \S\ref{sec:ailonchazelle}.
+In this section, we present bounds on the performance of the
+proto-algorithm when it is implemented with an SRFT test matrix.
+In contrast with the results
+for Gaussian test matrices, the results in this section hold for both
+real and complex input matrices.
+
+%\notate{Review this after fixing the other paper.}
+
+%Unfortunately, our results for the
+%SRFT are less refined than our results for Gaussian matrices.
+
+%In Section~\ref{sec:ailonchazelle}, we described a type of structured
+%random matrix, called a \term{subsampled random Fourier transform},
+%that can be used to accelerate the proto-algorithm.  In this section,
+%we describe how an SRFT interacts with the right singular vectors of
+%a fixed input matrix.  We use this information to develop error bounds
+%for the algorithm when it is implemented with SRFT test matrices.
+%In contrast with the results on Gaussian matrices, the results in this
+%section do not depend on whether the input matrix is real or complex.
+
+
+%A \term{subsampled random Fourier transform} (SRFT) is a type of
+%random dimension-reduction map.  In other words, it transports a
+%collection of vectors from a high-dimensional Hilbert space into a
+%low-dimensional Hilbert space, while approximately preserving
+%their metric geometry.  Unlike classical methods, such as random
+%projections, the SRFT can be applied to vectors in a
+%computationally efficient manner, so it is better suited for
+%practical purposes.
+
+% \subsection{Construction and Properties}
+
+Recall from~\S\ref{sec:ailonchazelle} that an SRFT is a
+tall $n \times \ell$ matrix of the form $\mtx{\Omega} = \sqrt{n/\ell}
+\cdot \mtx{DFR}^\adj$ where
+
+\lsp
+
+\begin{itemize}
+\item   $\mtx{D}$ is a random $n \times n$ diagonal matrix whose
+entries are independent and uniformly distributed on the complex
+unit circle;
+
+\item   $\mtx{F}$ is the $n \times n$ unitary discrete Fourier
+transform; and
+
+\item   $\mtx{R}$ is a random $\ell \times n$ matrix that
+restricts an $n$-dimensional vector to $\ell$ coordinates, chosen
+uniformly at random.
+\end{itemize}
+
+\lsp
+
+\noindent
+Up to scaling, an SRFT is just a section of a unitary matrix,
+so it satisfies the norm identity $\norm{\mtx{\Omega}} = \sqrt{n/\ell}$.
+The critical fact is that an appropriately designed SRFT approximately preserves
+the geometry of an \emph{entire subspace of vectors}.
+
+
+
+%\pgnotate{There is confusion above about whether the SRFT is $\ell
+%\times n$ or $n\times \ell$. I used $n\times \ell$ in earlier
+%sections, which to me seems natural since we want to multiply
+%vectors from the left. We should also coordinate our notation for
+%the diagonal matrix and the sampling matrix. To me ``$\mtx{D}$'' for
+%Diagonal and ``$\mtx{R}$'' for Restriction seem natural but I do not
+%have strong opinions.}
+
+%\notate{The commentary can be axed from the journal paper.}
+
+%This design may seem mysterious, but there are clear intuitions
+%to support it.  Suppose that we want to estimate the energy
+%(i.e., squared $\ell_2$ norm) of a fixed vector $\vct{x}$ by
+%sampling $\ell$ of its $n$ entries at random.  On average, these
+%random entries carry $\ell/n$ of the total energy.   (The factor
+%$\sqrt{n/\ell}$ reverses this scaling.)  When $\vct{x}$
+%has a few large components, the variance of this estimator
+%is very high.  On the other hand, when the components of $\vct{x}$
+%have comparable magnitude, the estimator has much lower variance,
+%so it is precise with very high probability.
+%
+%The purpose of the matrix product $\mtx{DF}$ is to flatten out
+%input vectors before we sample.  To see why it achieves this goal,
+%fix a unit vector $\vct{x}$, and examine the first component of
+%$\vct{x}^\adj \mtx{DF}$.
+%$$
+%(\vct{x}^\adj \mtx{DF})_1 = \sum\nolimits_{i=1}^n x_i \eps_i f_{i1},
+%$$
+%where $f_{ij}$ are the components of the DFT matrix $\mtx{F}$.
+%This random sum clearly has zero mean.  Since the entries
+%of the DFT have magnitude $n^{-1/2}$, the variance of the sum is $n^{-1}$.
+%Hoeffding's inequality~\cite{Hoe63:Probability-Inequalities}
+%shows that the magnitude of the first
+%component of $\vct{x}^\adj \mtx{DF}$ is on the order of $n^{-1/2}$
+%with extremely high probability.  The remaining components have exactly the
+%same property.
+
+
+%  We present a weaker result that is adequate for our purposes.
+
+%An $n \times k$ matrix $\mtx{W}$ is called a \term{partial
+%isometry} if its columns are orthonormal.  Evidently, the range of
+%$\mtx{W}$ is a $k$-dimensional subspace of $\Cspace{n}$.
+
+\lsp
+
+\begin{theorem}[The SRFT preserves geometry] \label{thm:SRFT-spec-bd}
+Fix an $n \times k$ orthonormal matrix $\mtx{V}$, and
+draw an $n \times \ell$ SRFT matrix $\mtx{\Omega}$
+where the parameter $\ell$
+satisfies
+$$
+4 \left[ \sqrt{k} + \sqrt{8\log(kn)} \right]^{2} \log(k) \leq \ell \leq n.
+$$
+Then
+$$
+0.40 \leq \sigma_{k}(\mtx{V}^\adj \mtx{\Omega})
+\quad\text{and}\quad
+\sigma_{1}(\mtx{V}^\adj \mtx{\Omega}) \leq 1.48
+$$
+with failure probability at most $\bigO(k^{-1})$.
+\end{theorem}
+
+
+%\begin{theorem}[The SRFT preserves rank] \label{thm:SRFT-spec-bd}
+%Fix a $n \times k$ orthonormal matrix $\mtx{W}$ with $k \geq 246$, and
+%draw an $n \times \ell$ SRFT matrix $\mtx{\Omega}$
+%where the parameter $\ell$
+%satisfies
+%$$
+%24 \left[ \sqrt{k} + \sqrt{8\log(25n)} \right]^{2} \log (4k) \leq \ell \leq n.
+%$$
+%Then
+%$$
+%\sigma_{k}(\mtx{W\Omega}) \geq \frac{1}{\sqrt{3}}
+%%\quad\text{and}\quad
+%%\sigma_{1}(\mtx{SW}) \leq \sqrt{2}
+%$$
+%with probability at least $1/2$.
+%\end{theorem}
+
+
+%\notate{Switch to average case analysis???}
+
+\lsp
+
+In words, the kernel of an SRFT of dimension $\ell \sim k \log(k)$ is unlikely to intersect a fixed $k$-dimensional subspace. In contrast
+with the Gaussian case, the logarithmic factor $\log(k)$ in the lower
+bound on $\ell$ cannot generally be removed (Remark~\ref{rem:coupon}).
+
+Theorem~\ref{thm:SRFT-spec-bd} follows from a straightforward variation of the argument in~\cite{Tro10:Improved-Analysis}, which establishes equivalent bounds for a real analog of the SRFT, called the \term{subsampled randomized Hadamard transform} (SRHT).  We omit further details.
+
+
+%Although this theorem only provides a constant failure probability,
+%the failure rate in practice is polynomial in $k^{-1}$.
+
+%The proof of Theorem~\ref{thm:SRFT-spec-bd} appears in Appendix~\ref{app:SRFT}.
+%The argument closely follows~\cite[Thm.~3.1]{RV07:Sampling-Large}
+%and~\cite[Sec.~9]{Tro08:Conditioning-Random}.  Some related results
+%appear in~\cite{NDT09:Fast-Efficient}.
+
+\subsection{Performance guarantees}
+
+We are now prepared to present detailed information on the
+performance of the proto-algorithm when the test matrix
+$\mtx{\Omega}$ is an SRFT.
+
+\lsp
+
+\begin{theorem}[Error bounds for SRFT]
+\label{thm:SRFT}
+Fix an $m \times n$ matrix $\mtx{A}$ with singular values
+$\sigma_1 \geq \sigma_2 \geq \sigma_3 \geq \dots$.
+Draw an $n \times \ell$ SRFT matrix $\mtx{\Omega}$, where
+$$
+4 \left[\sqrt{k} + \sqrt{8\log(kn)} \right]^2 \log(k) \leq \ell \leq n.
+$$
+Construct the sample matrix $\mtx{Y} = \mtx{A\Omega}$. Then
+\begin{align*}
+\norm{ (\Id - \mtx{P}_{\mtx{Y}}) \mtx{A} }
+    &\leq \sqrt{1 + 7n/\ell} \cdot \sigma_{k+1}  \quad\text{and} \\
+ \fnorm{ (\Id - \mtx{P}_{\mtx{Y}}) \mtx{A} }
+    &\leq \sqrt{1 + 7n/\ell} \cdot \left( \sum\nolimits_{j > k} \sigma_j^2 \right)^{1/2}
+\end{align*}
+with failure probability at most $\bigO(k^{-1})$.
+\end{theorem}
+
+\lsp
+
+%\notate{Fix discussion.}
+
+As we saw in~\S\ref{sec:gauss-avg-case},
+the quantity $\sigma_{k+1}$ is the minimal spectral-norm error possible
+when approximating $\mtx{A}$ with a rank-$k$ matrix.
+Similarly, the series in the second bound
+is the minimal Frobenius-norm error when approximating $\mtx{A}$
+with a rank-$k$ matrix.  We see that both error bounds
+lie within a polynomial factor of the baseline, and this factor decreases
+with the number $\ell$ of samples we retain.
+
+The likelihood of error with an SRFT test matrix is substantially worse than
+in the Gaussian case.  The failure probability here is roughly $k^{-1}$,
+while in the Gaussian case, the failure probability is roughly $\econst^{-(\ell - k)}$.
+This qualitative difference is not an artifact of the analysis; discrete sampling techniques inherently fail with higher probability.
+
+Matrix approximation schemes based on SRFTs often perform much better in practice
+than the error analysis here would indicate. While it is not generally possible
+to guarantee accuracy with a sampling parameter less than $\ell \sim k \log(k)$,
+we have found empirically that the choice $\ell = k+20$ is adequate
+in almost all applications. Indeed, SRFTs sometimes perform even \textit{better}
+than Gaussian matrices (see, e.g., Figure \ref{fig:SRFT_errors}).
+
+\begin{figure}
+\begin{center}
+\setlength{\unitlength}{1mm}
+\begin{picture}(130,102)
+\put(08,00){\includegraphics[width=120mm]{Pics/fig_error_distributions_mod.eps}}
+%\put(00,78){$p(e_{25})$}
+%\put(65,78){$p(e_{50})$}
+\put(02,13){\rotatebox{90}{Empirical density}}
+%\put(65,26){$p(e_{100})$}
+\put(36,55){$e_{25}$}
+\put(101,55){$e_{50}$}
+\put(36,03){$e_{75}$}
+\put(101,03){$e_{100}$}
+\put(33,100){$\ell = 25$}
+\put(33,48){$\ell = 75$}
+\put(98,100){$\ell = 50$}
+\put(98,48){$\ell = 100$}
+\put(48,42.5){\footnotesize Gauss}
+\put(48,39.5){\footnotesize Ortho}
+\put(48,36.5){\footnotesize SRFT}
+\put(48,33.5){\footnotesize GSRFT}
+\end{picture}
+\end{center}
+\caption{{\rm Empirical probability density functions for the error in Algorithm \ref{alg:basic}.}
+As described in~\S\ref{sec:num_SRFT}, the algorithm is implemented with four
+distributions for the random test matrix and used to approximate the $200\times 200$ input matrix obtained by
+discretizing the integral operator \eqref{eq:int_op_laplace}.
+The four panels capture the empirical error distribution for each version of the algorithm
+at the moment when $\ell = 25, 50, 75, 100$ random samples have been drawn.}
+\label{fig:SRFT_errors}
+\end{figure}
+
+%In practice, $\ell = k \log k$ is a reasonable choice for the
+%sampling parameter. Although the factor $\log k$ cannot generally be
+%removed, experiments suggest that the selection $\ell = k + 20$ is
+%often adequate.\footnote{I find the message of this paragraph slightly
+%unclear: Are we saying that $\ell = k\log k$ is a good choice, or that
+%$\ell = k+20$ is a good choice? Maybe we could write something along
+%the lines:
+
+%The likelihood of error with an SRFT test matrix is much higher than
+%in the Gaussian case.  In practice, the failure probability here is
+%polynomial in $k^{-1}$, while in the Gaussian failure probability is
+%$\econst^{-(\ell - k)}$ or better.  This difference is not an
+%artifact of the analysis.  Discrete sampling techniques inherently
+%fail with higher probability because of the coupon collector's
+%problem (Remark~\ref{remark:coupon}). \notate{Fix me.}
+
+%~\cite{Fel68:Introduction-Probability}.
+%\pgnotate{Would a reference to Remark \ref{remark:coupon} be in order?}
+
+%\notate{Discussion of what this result means.  We can't leverage
+%the detailed error bound because there's no independence between
+%$\mtx{\Omega}_1$ and $\mtx{\Omega}_2$ anymore.  In the
+%introduction, if we cite a result, it is probably better just to
+%replace the numerical constants with letters.  The values here
+%really have no significance.}
+
+%\notate{Check probabilities}
+
+We complete the section with the proof of Theorem~\ref{thm:SRFT}.
+
+
+\input{main82.bbl}
+
+\end{document}
