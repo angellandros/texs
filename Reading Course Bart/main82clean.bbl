@@ -1,0 +1,76 @@
+\begin{thebibliography}{100}
+
+\bibitem{2009_clarkson_woodruff}
+{\sc K.~L. Clarkson and D.~P. Woodruff}, {\em Numerical linear algebra in the
+  streaming model}, in STOC '09: Proc. 41st Ann. ACM Symp. Theory of Computing,
+  2009.
+
+\bibitem{Gu-personal}
+  {\sc M.~Gu}, 2007.
+\newblock Personal communication.
+
+\bibitem{Mir60:Symmetric-Gauge}
+{\sc L.~Mirsky}, {\em Symmetric gauge functions and unitarily invariant norms},
+  Quart. J. Math. Oxford Ser. (2), 11 (1960), pp.~50--59.
+
+\bibitem{RM}
+{\sc N. Halko and P. G. Martinsson and J. A. Tropp}, {\em Finding Structure with
+  Randomness: Probabilistic Algorithms for Constructing Approximate Matrix
+  Decompositions}, SIAM Review, 53 (2011), pp.~217--288.
+
+\bibitem{Szlam10}
+{\sc P.-G. Martinsson, A.~Szlam, and M.~Tygert}, {\em Normalized power
+  iterations for the computation of {SVD}}.
+\newblock Manuscript., Nov. 2010.
+
+\bibitem{Tro10:Improved-Analysis}
+\leavevmode\vrule height 2pt depth -1.6pt width 23pt, {\em Improved analysis of
+  the subsampled randomized {H}adamard transform}, Adv. Adaptive Data Anal., 3
+  (2011).
+\newblock To appear. Available at \url{arXiv:1011.1595}.
+
+\bibitem{golub}
+{\sc G.~H. Golub and C.~F. van Loan}, {\em Matrix Computations}, Johns Hopkins
+  Studies in the Mathematical Sciences, Johns Hopkins Univ. Press, Baltimore,
+  MD, 3rd~ed., 1996.
+
+\bibitem{gu_rrqr}
+{\sc M.~Gu and S.~C. Eisenstat}, {\em Efficient algorithms for computing a
+  strong rank-revealing {QR} factorization}, SIAM J. Sci. Comput., 17 (1996),
+  pp.~848--869.
+
+\bibitem{hackbusch2003}
+{\sc L.~Grasedyck and W.~Hackbusch}, {\em Construction and arithmetics of
+  {$\mathcal{H}$}-matrices}, Computing, 70 (2003), pp.~295--334.
+
+\bibitem{random1}
+{\sc P.-G. Martinsson, V.~Rokhlin, and M.~Tygert}, {\em A randomized algorithm
+  for the approximation of matrices}, Computer Science Dept. Tech. Report 1361,
+  Yale Univ., New Haven, CT, 2006.
+
+\bibitem{random2}
+{\sc F.~Woolfe, E.~Liberty, V.~Rokhlin, and M.~Tygert}, {\em A fast randomized
+  algorithm for the approximation of matrices}, Appl. Comp. Harmon. Anal., 25
+  (2008), pp.~335--366.
+
+\bibitem{rokhlin1997}
+{\sc L.~Greengard and V.~Rokhlin}, {\em A new version of the fast multipole
+  method for the {L}aplace equation in three dimensions}, Acta Numer., 17
+  (1997), pp.~229--269.
+
+\bibitem{roweis}
+{\sc S.~Roweis}, {\em {EM} algorithms for {PCA} and {SPCA}}, in Proc. 10th Ann.
+  Conf. Advances in Neural Information Processing Systems (NIPS), MIT Press,
+  1997, pp.~626--632.
+
+\bibitem{stewart1969}
+{\sc G.~Stewart}, {\em Accelerating the orthogonal iteration for the
+  eigenvectors of a {H}ermitian matrix}, Num. Math., 13 (1969), pp.~362--376.
+\newblock 10.1007/BF02165413.
+
+\bibitem{tygert_szlam}
+{\sc V.~Rokhlin, A.~Szlam, and M.~Tygert}, {\em A randomized algorithm for
+  principal component analysis}, SIAM J. Matrix Anal. Appl., 31 (2009),
+  pp.~1100--1124.
+
+\end{thebibliography}

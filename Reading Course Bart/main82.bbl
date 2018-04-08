@@ -642,4 +642,9 @@
   algorithm for the approximation of matrices}, Appl. Comp. Harmon. Anal., 25
   (2008), pp.~335--366.
 
+\bibitem{RM}
+{\sc N. Halko and P. G. Martinsson and J. A. Tropp}, {\em Finding Structure with
+  Randomness: Probabilistic Algorithms for Constructing Approximate Matrix
+  Decompositions}, SIAM Review, 53 (2011), pp.~217--288.
+
 \end{thebibliography}

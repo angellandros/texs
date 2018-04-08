@@ -434,7 +434,7 @@ matrix $\mtx{Y} = \mtx{A\Omega}$ using $\bigO(mn\log(\ell))$ flops via a
 subsampled FFT~\cite{random2}.
 %\pgnotate{Fixed an double occurrence of the word ``using''.}
 Then we form the basis $\mtx{Q}$ by orthonormalizing
-the columns of $\mtx{Y}$, as described in~\cite[\S 4.1]{RM}. %{sec:proto_revisited}.
+the columns of $\mtx{Y}$, as described in~\cite[\S~4.1]{RM}. %{sec:proto_revisited}.
 The total number $T_{\rm struct}$ of flops required by this procedure is
 \begin{equation}
 \label{eq:cost_SRFT}
@@ -830,7 +830,7 @@ Stage A using Algorithm~\ref{alg:basic} with $p$ constant
 (for the fixed-rank problem)
 or Algorithm~\ref{alg:adaptive2} (for the fixed-precision problem)
 at a cost of  $(k+p) \, T_{\rm mult} + \bigO(k^2 m)$ flops.
-For Stage B, we invoke \cite[Algorithm 5.1]{RM} %\ref{alg:Atranspose},
+For Stage B, we invoke \cite[Algorithm~5.1]{RM} %\ref{alg:Atranspose},
 which
 requires $(k+p) \, T_{\rm mult} + \bigO(k^2 (m + n))$ flops.
 The total cost $T_{\rm sparse}$ satisfies
@@ -870,8 +870,8 @@ that in order to obtain an approximate SVD of rank $k$, the cost of
 a numerically stable implementation of a Krylov method is no less than
 the cost \eqref{eq:sparsealg-cost} with $p$ set to zero. At this price,
 the Krylov method often obtains better accuracy than the basic
-randomized method obtained by combining Algorithms \cite[Algorithm 4.1]{RM} and
-\cite[Algorithm 5.1]{RM}, especially for matrices whose singular values decay
+randomized method obtained by combining Algorithms \cite[Algorithm~4.1]{RM} and
+\cite[Algorithm~5.1]{RM}, especially for matrices whose singular values decay
 slowly. On the other hand, the randomized schemes are inherently more robust
 and allow much more freedom in organizing the computation to suit a particular
 application or a particular hardware architecture. The latter point is in
@@ -911,7 +911,7 @@ sophisticated modifications such as restarts, reorthogonalization procedures, et
 Randomized sampling does not eliminate the difficulties referred to in this quotation;
 however it reduces the task of computing a \emph{partial} spectral decomposition
 of a very large matrix to the task of computing a \emph{full} decomposition of
-a small dense matrix.  (For example,~in Algorithm \cite[Algorithm 5.1]{RM}, the input matrix
+a small dense matrix.  (For example,~in Algorithm \cite[Algorithm~5.1]{RM}, the input matrix
 $\mtx{A}$ is large and $\mtx{B}$ is small.) The latter task is much better understood
 and is eminently suitable for using canned routines.  Random sampling schemes
 interact with the large matrix only through matrix--matrix products, which can
